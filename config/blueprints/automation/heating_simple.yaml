@@ -1,0 +1,269 @@
+blueprint:
+  name: Heating Simple
+  description: |
+    **simplified heating control** 
+    **Version** 0.01-poc (b21)
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+    Copyright (C) 2023 Marc Hefter
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/heating_simple.yaml
+  domain: automation
+
+  input:
+    valves:
+      name: Heating Valves
+      description: Thermostats (thermostatic regulated valves) to be controlled with this settings
+      selector:
+        entity:
+          filter:
+            - domain:
+              - climate
+          multiple: true
+    scheduler:
+      name: Scheduler for comfort temperature
+      description: >
+        Scheduler to specify times, to activate comfort or away temperature.
+        While 'off', eco temperature will be used.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - schedule
+          multiple: false
+    eco_temp:
+      name: Eco Temperature
+      description: >
+        Temperature, to use as minimum.
+        This will be used, if scheduler is off, e.g. during night periods.
+      default: 13
+      selector:
+        number:
+          min: 5.0
+          max: 24.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+    comfort_temp:
+      name: Comfort Temperature
+      description: Temperature, to use if scheduler in on and someone is at home.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_number
+          multiple: false
+    event_delay:
+      name: Delay Event
+      description: >
+        Time in seconds changes needs to be active, before acting.
+        This will delay the triggered event and filter glitches.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: seconds
+    action_delay:
+      name: Delay Actions
+      description: >
+        Time in seconds delaying between subsequent actions.
+        To ensure the components are ready again.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: seconds
+    windowopened_delay:
+      name: Delay window opened
+      description: >
+        Time in minutes window needs to be opened, before acting.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
+    nobodyhome_delay:
+      name: Delay nobody home
+      description: >
+        Time in minutes before acting on no persons at home.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 99
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
+    winter_mode:
+      name: (optional) Winter mode
+      description: >
+        If used, this needs to be 'on', for heating to be enabled.
+        If this entity is 'off', the heating will be disabled.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - binary_sensor
+          multiple: false
+    override_max:
+      name: (optional) Override valves to max
+      description: Activate all valves, to maximum temperature.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - timer
+          multiple: false
+
+variables:
+  # get the settings to variables
+  valves: !input valves
+  scheduler: !input scheduler
+  eco_temp: !input eco_temp
+  comfort_temp: !input comfort_temp
+  # interpret settings to state variables
+  scheduled_preset: >
+    {% if is_state(scheduler, 'on') %}
+      comfort
+    {% else %}
+      eco
+    {% endif %}
+  scheduled_temp: >
+    {% if is_state(scheduler, 'on') %}
+      {{ states(comfort_temp) }}
+    {% else %}
+      eco_temp
+    {% endif %}
+trigger_variables:
+  scheduler_triggervar: !input scheduler
+  winter_mode: !input winter_mode
+  override_max: !input override_max
+trigger:
+  # platform events
+  - platform: homeassistant
+    event: start
+  - platform: event
+    event_type: automation_reloaded
+  # timed refresh
+  - platform: time_pattern
+    hours: /2 # every second hour
+    minutes: "00"
+    seconds: "00"
+  # configuration changes occured
+  - platform: state
+    entity_id: !input valves
+  - platform: state
+    entity_id: !input scheduler
+  - platform: state
+    entity_id: !input comfort_temp
+  # template trigger
+  - platform: template # scheduler switching to on
+    value_template: >
+      {{ scheduler_triggervar != none and is_state(scheduler_triggervar, 'on') }}
+    for:
+      seconds: !input event_delay
+  - platform: template # scheduler switching to off
+    value_template: >
+      {{ scheduler_triggervar != none and is_state(scheduler_triggervar, 'off') }}
+    for:
+      seconds: !input event_delay
+  - platform: template # winter mode switching to on
+    value_template: >
+      {{ winter_mode != none and is_state(winter_mode, 'on') }}
+    for:
+      seconds: !input event_delay
+  - platform: template # winter mode switching to off
+    value_template: >
+      {{ winter_mode != none and is_state(winter_mode, 'off') }}
+    for:
+      seconds: !input event_delay
+  - platform: template # override mode switching to on
+    value_template: >
+      {{ override_max != none and (states(override_max) in ['on', 'active']) }}
+    for:
+      seconds: !input event_delay
+  - platform: template # override mode switching to off
+    value_template: >
+      {{ override_max != none and (states(override_max) not in ['on', 'active']) }}
+    for:
+      seconds: !input event_delay
+
+mode: restart # stop and restart on multiple calls
+
+action:
+  - service: system_log.write
+    data:
+      message: >
+        Heating Control by march42
+        triggered with {{ trigger }}
+        valves {{ valves }}
+        scheduled {{ scheduled_preset }}, {{ scheduled_temp }}
+      level: info
+      logger: blueprints.march42.climate
+  # homeassistant_started
+  # automation_reloaded
+  #{{ trigger.platform != 'time_pattern' }}
+
+  # set TRVs
+  - if:
+      - condition: template
+        value_template: "{{ override_max != none and (states(override_max) in ['on', 'active']) }}"
+    then: # override/maintenance mode
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: !input valves
+        data:
+          hvac_mode: 'heat'
+      - delay:
+          seconds: !input action_delay
+      - service: climate.set_temperature
+        data:
+          entity_id: !input valves
+          temperature: 30.0
+    else:
+      - if:
+          - condition: template
+            value_template: "{{ winter_mode != none and is_state(winter_mode, 'off') }}"
+        then: # summer_mode (winter_mode==off)
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input valves
+            data:
+              hvac_mode: 'off'
+        else:
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input valves
+            data:
+              hvac_mode: 'heat'
+          - delay:
+              seconds: !input action_delay
+          - service: climate.set_temperature
+            data:
+              entity_id: !input valves
+              temperature: "{{ scheduled_temp | float }}"
