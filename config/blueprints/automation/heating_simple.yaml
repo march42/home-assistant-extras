@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.01-poc (b21)
+    **Version** 0.02-alpha (b29)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -65,6 +65,30 @@ blueprint:
             - domain:
               - input_number
           multiple: false
+    winter_mode:
+      name: (optional) Winter mode
+      description: >
+        If used, this needs to be 'on', for heating to be enabled.
+        If this entity is 'off', the heating will be disabled.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - binary_sensor
+          multiple: false
+    override_max:
+      name: (optional) Override valves to max
+      description: Activate all valves, to maximum temperature.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - timer
+          multiple: false
     event_delay:
       name: Delay Event
       description: >
@@ -91,6 +115,18 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: seconds
+    window:
+      name: (optional) Window sensor
+      description: >
+        Window opened sensor or group of sensors, to check.
+        If 'on' the window is considered opened and the valves will be shut off.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - binary_sensor
+          multiple: true
     windowopened_delay:
       name: Delay window opened
       description: >
@@ -115,30 +151,6 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
-    winter_mode:
-      name: (optional) Winter mode
-      description: >
-        If used, this needs to be 'on', for heating to be enabled.
-        If this entity is 'off', the heating will be disabled.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - binary_sensor
-          multiple: false
-    override_max:
-      name: (optional) Override valves to max
-      description: Activate all valves, to maximum temperature.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - timer
-          multiple: false
 
 variables:
   # get the settings to variables
@@ -159,10 +171,17 @@ variables:
     {% else %}
       eco_temp
     {% endif %}
+  windows_opened: >
+    {% if window != none %}
+      {{ expand(window) | selectattr('state', 'eq', 'on') | list | count }}
+    {% else %}
+      0
+    {% endif %}
 trigger_variables:
   scheduler_triggervar: !input scheduler
-  winter_mode: !input winter_mode
+  window: !input window
   override_max: !input override_max
+  winter_mode: !input winter_mode
 trigger:
   # platform events
   - platform: homeassistant
@@ -175,8 +194,8 @@ trigger:
     minutes: "00"
     seconds: "00"
   # configuration changes occured
-  - platform: state
-    entity_id: !input valves
+  #- platform: state
+  #  entity_id: !input valves
   - platform: state
     entity_id: !input scheduler
   - platform: state
@@ -212,6 +231,20 @@ trigger:
       {{ override_max != none and (states(override_max) not in ['on', 'active']) }}
     for:
       seconds: !input event_delay
+  - platform: template # windows closed (opened == 0)
+    value_template: >
+      {{ window != none and
+      ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+    for:
+      minutes: !input windowopened_delay
+      #seconds: !input reaction_delay
+  - platform: template # windows opened > 0
+    value_template: >
+      {{ window != none and
+      ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+    for:
+      minutes: !input windowopened_delay
+      #seconds: !input reaction_delay
 
 mode: restart # stop and restart on multiple calls
 
@@ -225,9 +258,6 @@ action:
         scheduled {{ scheduled_preset }}, {{ scheduled_temp }}
       level: info
       logger: blueprints.march42.climate
-  # homeassistant_started
-  # automation_reloaded
-  #{{ trigger.platform != 'time_pattern' }}
 
   # set TRVs
   - if:
@@ -248,7 +278,9 @@ action:
     else:
       - if:
           - condition: template
-            value_template: "{{ winter_mode != none and is_state(winter_mode, 'off') }}"
+            value_template: >
+              {{ (winter_mode != none and is_state(winter_mode, 'off'))
+              or (windows_opened > 0) }}
         then: # summer_mode (winter_mode==off)
           - service: climate.set_hvac_mode
             target:
