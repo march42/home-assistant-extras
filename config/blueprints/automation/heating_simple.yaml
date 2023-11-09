@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.02-alpha (b29)
+    **Version** 0.03-defect (b41)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -139,6 +139,33 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+    persons:
+      name: (optional) Persons for presence detection
+      description: >
+        Persons to check present for activating comfort temperature.
+        If none of the persons are detected home, the away temperature will be used instead of confort temperature.
+        Instead of persons, you can use 'device_tracker' as well.
+        If undefined, the script will always set persons_home=1.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - person
+              - device_tracker
+          multiple: true
+    away_temp:
+      name: (optional) Away Temperature
+      description: >
+        Temperature, to use if no one is at home.
+        If unset, eco temperature will be used.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_number
+          multiple: false
     nobodyhome_delay:
       name: Delay nobody home
       description: >
@@ -151,6 +178,31 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+    party_mode:
+      name: (optional) Party ongoing (timer or boolean)
+      description: >
+        If active, heating will be activated.
+        During party the scheduler, presence and window open detection will be ignored.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - timer
+              - input_boolean
+          multiple: false
+    party_temp:
+      name: (optional) Party Temperature
+      description: >
+        Temperature, to use if party is happening.
+        If unset, comfort temperature will be used instead.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_number
+          multiple: false
 
 variables:
   # get the settings to variables
@@ -159,11 +211,19 @@ variables:
   eco_temp: !input eco_temp
   comfort_temp: !input comfort_temp
   # interpret settings to state variables
+  window: !input window
+  windows_opened: "{{ iif(window == none, 0, expand(window) | selectattr('state', 'eq', 'on') | list | count) }}"
+  away_temp_input: !input away_temp
+  away_temp: "{{ iif(away_temp_input != none, states(away_temp_input, eco_temp)) }}"
+  party_temp_input: !input party_temp
+  party_temp: "{{ iif(party_temp_input != none, states(party_temp_input, comfort_temp)) }}"
+  party_mode_input: !input party_mode
+  party_mode: "{{ party_mode_input != none and (states(party_mode_input) in ['on', 'active']) }}"
   scheduled_preset: >
     {% if is_state(scheduler, 'on') %}
-      comfort
+      'comfort'
     {% else %}
-      eco
+      'eco'
     {% endif %}
   scheduled_temp: >
     {% if is_state(scheduler, 'on') %}
@@ -171,15 +231,9 @@ variables:
     {% else %}
       eco_temp
     {% endif %}
-  windows_opened: >
-    {% if window != none %}
-      {{ expand(window) | selectattr('state', 'eq', 'on') | list | count }}
-    {% else %}
-      0
-    {% endif %}
 trigger_variables:
   scheduler_triggervar: !input scheduler
-  window: !input window
+  window_triggervar: !input window
   override_max: !input override_max
   winter_mode: !input winter_mode
 trigger:
@@ -233,15 +287,15 @@ trigger:
       seconds: !input event_delay
   - platform: template # windows closed (opened == 0)
     value_template: >
-      {{ window != none and
-      ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+      {{ window_triggervar != none and
+      ( expand(window_triggervar) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
     for:
       minutes: !input windowopened_delay
       #seconds: !input reaction_delay
   - platform: template # windows opened > 0
     value_template: >
-      {{ window != none and
-      ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+      {{ window_triggervar != none and
+      ( expand(window_triggervar) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
     for:
       minutes: !input windowopened_delay
       #seconds: !input reaction_delay
