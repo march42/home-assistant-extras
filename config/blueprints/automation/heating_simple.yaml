@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.03-defect (b41)
+    **Version** 0.04-alpha (b42)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -65,30 +65,6 @@ blueprint:
             - domain:
               - input_number
           multiple: false
-    winter_mode:
-      name: (optional) Winter mode
-      description: >
-        If used, this needs to be 'on', for heating to be enabled.
-        If this entity is 'off', the heating will be disabled.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - binary_sensor
-          multiple: false
-    override_max:
-      name: (optional) Override valves to max
-      description: Activate all valves, to maximum temperature.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - timer
-          multiple: false
     event_delay:
       name: Delay Event
       description: >
@@ -115,6 +91,30 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: seconds
+    winter_mode:
+      name: (optional) Winter mode
+      description: >
+        If used, this needs to be 'on', for heating to be enabled.
+        If this entity is 'off', the heating will be disabled.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - binary_sensor
+          multiple: false
+    override_max:
+      name: (optional) Override valves to max
+      description: Activate all valves, to maximum temperature.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - timer
+          multiple: false
     window:
       name: (optional) Window sensor
       description: >
@@ -207,62 +207,112 @@ blueprint:
 variables:
   # get the settings to variables
   valves: !input valves
-  scheduler: !input scheduler
   eco_temp: !input eco_temp
-  comfort_temp: !input comfort_temp
-  # interpret settings to state variables
-  window: !input window
-  windows_opened: "{{ iif(window == none, 0, expand(window) | selectattr('state', 'eq', 'on') | list | count) }}"
-  away_temp_input: !input away_temp
-  away_temp: "{{ iif(away_temp_input != none, states(away_temp_input, eco_temp)) }}"
-  party_temp_input: !input party_temp
-  party_temp: "{{ iif(party_temp_input != none, states(party_temp_input, comfort_temp)) }}"
-  party_mode_input: !input party_mode
-  party_mode: "{{ party_mode_input != none and (states(party_mode_input) in ['on', 'active']) }}"
-  scheduled_preset: >
-    {% if is_state(scheduler, 'on') %}
-      'comfort'
+  comfort_temp: >
+    {% if comfort_temp_input != none %}
+      {{ states(comfort_temp_input) | float }}
     {% else %}
-      'eco'
+      {{ eco_temp }}
+    {% endif %}
+  away_temp: >
+    {% if away_temp_input != none %}
+      {{ states(away_temp_input) | float }}
+    {% else %}
+      {{ eco_temp }}
+    {% endif %}
+  party_temp: >
+    {% if party_temp_input != none %}
+      {{ states(party_temp_input) | float }}
+    {% else %}
+      {{ comfort_temp }}
+    {% endif %}
+  # interpret settings to state variables
+  windows_opened: >
+    {% if window != none %}
+      {{ expand(window) | selectattr('state', 'eq', 'on') | list | count }}
+    {% else %}
+      0
+    {% endif %}
+  persons_home: >
+    {% if persons != none %}
+      {{ expand(persons) | selectattr('state', 'eq', 'home') | list | count }}
+    {% else %}
+      -1
+    {% endif %}
+#  party: >
+#    {{ party_mode != none and (states(party_mode) in ['on', 'active']) }}
+  scheduled_preset: >
+    {% if party_mode != none and states(party_mode) in ['on', 'active'] %}
+      party
+    {% else %}
+      {% if is_state(scheduler, 'on') %}
+        {% if persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+          away
+        {% else %}
+          comfort
+        {% endif %}
+      {% else %}
+        eco
+      {% endif %}
     {% endif %}
   scheduled_temp: >
-    {% if is_state(scheduler, 'on') %}
-      {{ states(comfort_temp) }}
+    {% if party_mode != none and states(party_mode) in ['on', 'active'] %}
+      {{ party_temp }}
     {% else %}
-      eco_temp
+      {% if is_state(scheduler, 'on') %}
+        {% if persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+          {{ away_temp }}
+        {% else %}
+          {{ comfort_temp }}
+        {% endif %}
+      {% else %}
+        {{ eco_temp }}
+      {% endif %}
     {% endif %}
 trigger_variables:
-  scheduler_triggervar: !input scheduler
-  window_triggervar: !input window
+  scheduler: !input scheduler
+  comfort_temp_input: !input comfort_temp
+  window: !input window
   override_max: !input override_max
   winter_mode: !input winter_mode
+  persons: !input persons
+  away_temp_input: !input away_temp
+  party_mode: !input party_mode
+  party_temp_input: !input party_temp
 trigger:
   # platform events
   - platform: homeassistant
     event: start
   - platform: event
     event_type: automation_reloaded
-  # timed refresh
-  - platform: time_pattern
-    hours: /2 # every second hour
-    minutes: "00"
-    seconds: "00"
   # configuration changes occured
-  #- platform: state
-  #  entity_id: !input valves
   - platform: state
     entity_id: !input scheduler
-  - platform: state
-    entity_id: !input comfort_temp
   # template trigger
+  # template comfort_temp, away_temp, party_temp
+  - platform: template # temperature setting changed
+    value_template: >
+      {{ comfort_temp_input != none and states(comfort_temp_input) > 0 }}
+    for:
+      seconds: !input event_delay
+  - platform: template # temperature setting changed
+    value_template: >
+      {{ away_temp_input != none and states(away_temp_input) > 0 }}
+    for:
+      seconds: !input event_delay
+  - platform: template # temperature setting changed
+    value_template: >
+      {{ party_temp_input != none and states(party_temp_input) > 0 }}
+    for:
+      seconds: !input event_delay
   - platform: template # scheduler switching to on
     value_template: >
-      {{ scheduler_triggervar != none and is_state(scheduler_triggervar, 'on') }}
+      {{ scheduler != none and is_state(scheduler, 'on') }}
     for:
       seconds: !input event_delay
   - platform: template # scheduler switching to off
     value_template: >
-      {{ scheduler_triggervar != none and is_state(scheduler_triggervar, 'off') }}
+      {{ scheduler != none and is_state(scheduler, 'off') }}
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to on
@@ -287,18 +337,36 @@ trigger:
       seconds: !input event_delay
   - platform: template # windows closed (opened == 0)
     value_template: >
-      {{ window_triggervar != none and
-      ( expand(window_triggervar) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+      {{ window != none and
+      ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
     for:
       minutes: !input windowopened_delay
-      #seconds: !input reaction_delay
   - platform: template # windows opened > 0
     value_template: >
-      {{ window_triggervar != none and
-      ( expand(window_triggervar) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+      {{ window != none and
+      ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
     for:
       minutes: !input windowopened_delay
-      #seconds: !input reaction_delay
+  - platform: template # nobody home
+    value_template: >
+      {{ persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 }}
+    for:
+      minutes: !input nobodyhome_delay
+  - platform: template # somebody home
+    value_template: >
+      {{ persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count != 0 }}
+    for:
+      minutes: !input nobodyhome_delay
+  - platform: template # party mode switching to on
+    value_template: >
+      {{ party_mode != none and (states(party_mode) in ['on', 'active']) }}
+    for:
+      seconds: !input event_delay
+  - platform: template # party mode switching to off
+    value_template: >
+      {{ party_mode != none and (states(party_mode) not in ['on', 'active']) }}
+    for:
+      seconds: !input event_delay
 
 mode: restart # stop and restart on multiple calls
 
