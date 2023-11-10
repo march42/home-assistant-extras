@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.04-alpha (b42)
+    **Version** 0.05-beta (b44)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -52,7 +52,7 @@ blueprint:
       selector:
         number:
           min: 5.0
-          max: 24.0
+          max: 30.0
           step: 0.5
           mode: slider
           unit_of_measurement: °C
@@ -287,24 +287,14 @@ trigger:
     event_type: automation_reloaded
   # configuration changes occured
   - platform: state
-    entity_id: !input scheduler
+    entity_id:
+      - !input scheduler
+      - !input comfort_temp
+      #- !input away_temp
+      #- !input party_temp
+    for:
+      seconds: !input event_delay
   # template trigger
-  # template comfort_temp, away_temp, party_temp
-  - platform: template # temperature setting changed
-    value_template: >
-      {{ comfort_temp_input != none and states(comfort_temp_input) > 0 }}
-    for:
-      seconds: !input event_delay
-  - platform: template # temperature setting changed
-    value_template: >
-      {{ away_temp_input != none and states(away_temp_input) > 0 }}
-    for:
-      seconds: !input event_delay
-  - platform: template # temperature setting changed
-    value_template: >
-      {{ party_temp_input != none and states(party_temp_input) > 0 }}
-    for:
-      seconds: !input event_delay
   - platform: template # scheduler switching to on
     value_template: >
       {{ scheduler != none and is_state(scheduler, 'on') }}
@@ -396,7 +386,7 @@ action:
       - service: climate.set_temperature
         data:
           entity_id: !input valves
-          temperature: 30.0
+          temperature: 99.0
     else:
       - if:
           - condition: template
