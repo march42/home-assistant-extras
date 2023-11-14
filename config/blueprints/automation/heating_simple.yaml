@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.06-beta (b49)
+    **Version** 0.06-beta (b52)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -208,6 +208,7 @@ variables:
   # get the settings to variables
   valves: !input valves
   eco_temp: !input eco_temp
+  # interpret settings to state variables
   comfort_temp: >
     {% if comfort_temp_input is not none %}
       {{ states(comfort_temp_input) | float }}
@@ -226,7 +227,6 @@ variables:
     {% else %}
       {{ comfort_temp }}
     {% endif %}
-  # interpret settings to state variables
   windows_opened: >
     {% if window is not none %}
       {{ expand(window) | selectattr('state', 'eq', 'on') | list | count }}
@@ -290,8 +290,8 @@ trigger:
     entity_id:
       - !input scheduler
       - !input comfort_temp
-      #- !input away_temp
-      #- !input party_temp
+      #- !input away_temp # state trigger doesn't work with optional, if unset
+      #- !input party_temp # state trigger doesn't work with optional, if unset
     for:
       seconds: !input event_delay
   # template trigger
