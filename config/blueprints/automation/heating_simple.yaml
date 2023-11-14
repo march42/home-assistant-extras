@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.05-beta (b44)
+    **Version** 0.06-beta (b49)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -114,7 +114,7 @@ blueprint:
             - domain:
               - input_boolean
               - timer
-          multiple: false
+          multiple: true
     window:
       name: (optional) Window sensor
       description: >
@@ -190,7 +190,7 @@ blueprint:
             - domain:
               - timer
               - input_boolean
-          multiple: false
+          multiple: true
     party_temp:
       name: (optional) Party Temperature
       description: >
@@ -209,44 +209,44 @@ variables:
   valves: !input valves
   eco_temp: !input eco_temp
   comfort_temp: >
-    {% if comfort_temp_input != none %}
+    {% if comfort_temp_input is not none %}
       {{ states(comfort_temp_input) | float }}
     {% else %}
       {{ eco_temp }}
     {% endif %}
   away_temp: >
-    {% if away_temp_input != none %}
+    {% if away_temp_input is not none %}
       {{ states(away_temp_input) | float }}
     {% else %}
       {{ eco_temp }}
     {% endif %}
   party_temp: >
-    {% if party_temp_input != none %}
+    {% if party_temp_input is not none %}
       {{ states(party_temp_input) | float }}
     {% else %}
       {{ comfort_temp }}
     {% endif %}
   # interpret settings to state variables
   windows_opened: >
-    {% if window != none %}
+    {% if window is not none %}
       {{ expand(window) | selectattr('state', 'eq', 'on') | list | count }}
     {% else %}
       0
     {% endif %}
   persons_home: >
-    {% if persons != none %}
+    {% if persons is not none %}
       {{ expand(persons) | selectattr('state', 'eq', 'home') | list | count }}
     {% else %}
       -1
     {% endif %}
 #  party: >
-#    {{ party_mode != none and (states(party_mode) in ['on', 'active']) }}
+#    {{ party_mode is not none and (states(party_mode) in ['on', 'active']) }}
   scheduled_preset: >
-    {% if party_mode != none and states(party_mode) in ['on', 'active'] %}
+    {% if party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) %}
       party
     {% else %}
       {% if is_state(scheduler, 'on') %}
-        {% if persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+        {% if persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
           away
         {% else %}
           comfort
@@ -256,11 +256,11 @@ variables:
       {% endif %}
     {% endif %}
   scheduled_temp: >
-    {% if party_mode != none and states(party_mode) in ['on', 'active'] %}
+    {% if party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) %}
       {{ party_temp }}
     {% else %}
       {% if is_state(scheduler, 'on') %}
-        {% if persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+        {% if persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
           {{ away_temp }}
         {% else %}
           {{ comfort_temp }}
@@ -297,64 +297,66 @@ trigger:
   # template trigger
   - platform: template # scheduler switching to on
     value_template: >
-      {{ scheduler != none and is_state(scheduler, 'on') }}
+      {{ scheduler is not none and is_state(scheduler, 'on') }}
     for:
       seconds: !input event_delay
   - platform: template # scheduler switching to off
     value_template: >
-      {{ scheduler != none and is_state(scheduler, 'off') }}
+      {{ scheduler is not none and is_state(scheduler, 'off') }}
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to on
     value_template: >
-      {{ winter_mode != none and is_state(winter_mode, 'on') }}
+      {{ winter_mode is not none and is_state(winter_mode, 'on') }}
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to off
     value_template: >
-      {{ winter_mode != none and is_state(winter_mode, 'off') }}
+      {{ winter_mode is not none and is_state(winter_mode, 'off') }}
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to on
     value_template: >
-      {{ override_max != none and (states(override_max) in ['on', 'active']) }}
+      {{ override_max is not none
+        and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to off
     value_template: >
-      {{ override_max != none and (states(override_max) not in ['on', 'active']) }}
+      {{ override_max is not none
+        and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
     for:
       seconds: !input event_delay
   - platform: template # windows closed (opened == 0)
     value_template: >
-      {{ window != none and
+      {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
     for:
       minutes: !input windowopened_delay
   - platform: template # windows opened > 0
     value_template: >
-      {{ window != none and
+      {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
     for:
       minutes: !input windowopened_delay
   - platform: template # nobody home
     value_template: >
-      {{ persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 }}
+      {{ persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 }}
     for:
       minutes: !input nobodyhome_delay
   - platform: template # somebody home
     value_template: >
-      {{ persons != none and expand(persons) | selectattr('state', 'eq', 'home') | list | count != 0 }}
+      {{ persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count != 0 }}
     for:
       minutes: !input nobodyhome_delay
   - platform: template # party mode switching to on
     value_template: >
-      {{ party_mode != none and (states(party_mode) in ['on', 'active']) }}
+      {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     for:
       seconds: !input event_delay
   - platform: template # party mode switching to off
     value_template: >
-      {{ party_mode != none and (states(party_mode) not in ['on', 'active']) }}
+      {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
     for:
       seconds: !input event_delay
 
@@ -374,7 +376,9 @@ action:
   # set TRVs
   - if:
       - condition: template
-        value_template: "{{ override_max != none and (states(override_max) in ['on', 'active']) }}"
+        value_template: >
+          {{ override_max is not none
+            and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     then: # override/maintenance mode
       - service: climate.set_hvac_mode
         target:
@@ -391,7 +395,7 @@ action:
       - if:
           - condition: template
             value_template: >
-              {{ (winter_mode != none and is_state(winter_mode, 'off'))
+              {{ (winter_mode is not none and is_state(winter_mode, 'off'))
               or (windows_opened > 0) }}
         then: # summer_mode (winter_mode==off)
           - service: climate.set_hvac_mode
