@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 1.0 (b53)
+    **Version** 1.01-b59
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -78,6 +78,19 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: seconds
+    manually_revert_delay:
+      name: Delay Revert from manually setting Radiator
+      description: >
+        Time in minutes before reverting to schedule after manually setting radiator valve.
+        Set to 0, to ignore manually changed temperature.
+      default: 90
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
     action_delay:
       name: Delay Actions
       description: >
@@ -209,6 +222,7 @@ variables:
   # get the settings to variables
   valves: !input valves
   eco_temp: !input eco_temp
+  manually_revert_delay: !input manually_revert_delay
   # interpret settings to state variables
   comfort_temp: >
     {% if comfort_temp_input is not none %}
@@ -240,14 +254,24 @@ variables:
     {% else %}
       -1
     {% endif %}
-#  party: >
-#    {{ party_mode is not none and (states(party_mode) in ['on', 'active']) }}
+  # some checking variables for simplification
+  is_party: > # party started
+    {{ party_mode is not none and expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+  is_comfort: > # scheduler unset or active
+    {{ scheduler is none or expand(scheduler) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+  is_override_max: > # override to max set and active
+    {{ override_max is not none
+      and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
+  is_winter: > # winter_mode unset or any is on
+    {{ winter_mode is none or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+  is_summer: > # winter_mode set and none is on
+    {{ winter_mode is not none and expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 }}
   scheduled_preset: >
-    {% if party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) %}
+    {% if is_party %}
       party
     {% else %}
-      {% if is_state(scheduler, 'on') %}
-        {% if persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+      {% if is_comfort %}
+        {% if persons_home == 0 %}
           away
         {% else %}
           comfort
@@ -257,11 +281,11 @@ variables:
       {% endif %}
     {% endif %}
   scheduled_temp: >
-    {% if party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) %}
+    {% if is_party %}
       {{ party_temp }}
     {% else %}
-      {% if is_state(scheduler, 'on') %}
-        {% if persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 %}
+      {% if is_comfort %}
+        {% if persons_home == 0 %}
           {{ away_temp }}
         {% else %}
           {{ comfort_temp }}
@@ -270,6 +294,12 @@ variables:
         {{ eco_temp }}
       {% endif %}
     {% endif %}
+  is_temp_changed: > # trigger, on temperature changed
+    {{ trigger is not none and trigger.platform == 'state' and trigger.attribute == 'temperature' }}
+  is_temp_manual: > # trigger, on temperature changed manually
+    {{ is_temp_changed and not is_override_max and windows_opened == 0
+      and trigger.to_state.attributes.temperature != scheduled_temp }}
+
 trigger_variables:
   scheduler: !input scheduler
   comfort_temp_input: !input comfort_temp
@@ -280,6 +310,7 @@ trigger_variables:
   away_temp_input: !input away_temp
   party_mode: !input party_mode
   party_temp_input: !input party_temp
+
 trigger:
   # platform events
   - platform: homeassistant
@@ -295,6 +326,15 @@ trigger:
       #- !input party_temp # state trigger doesn't work with optional, if unset
     for:
       seconds: !input event_delay
+  # radiator valve changed manually
+  - platform: state
+    entity_id: !input valves
+    attribute: temperature
+    alias: 'temperature changed on TRV'
+    #not_to: {{ scheduled_temp }} # unluckily this is not working
+    for:
+      minutes: !input manually_revert_delay
+      seconds: 13 # delay always, to ensure manually handling is done
   # template trigger
   - platform: template # scheduler switching to on
     value_template: >
@@ -342,12 +382,12 @@ trigger:
       minutes: !input windowopened_delay
   - platform: template # nobody home
     value_template: >
-      {{ persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count == 0 }}
+      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
     for:
       minutes: !input nobodyhome_delay
   - platform: template # somebody home
     value_template: >
-      {{ persons is not none and expand(persons) | selectattr('state', 'eq', 'home') | list | count != 0 }}
+      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
     for:
       minutes: !input nobodyhome_delay
   - platform: template # party mode switching to on
@@ -374,12 +414,28 @@ action:
       level: info
       logger: blueprints.march42.climate
 
+  - if: # temperature on TRV changed
+      - condition: template
+        value_template: "{{ is_temp_changed }}"
+    then: # temperature changed trigger
+      - if: # ignore valid changes
+          - condition: template
+            value_template: > # temp changed trigger
+              {{ is_temp_manual and manually_revert_delay > 0 }}
+        then:
+          - service: system_log.write
+            data:
+              message: >
+                revert from temperature changed manually ({{ trigger.from_state.attributes.temperature }} to {{ trigger.to_state.attributes.temperature }})
+              level: info
+              logger: blueprints.march42.heating_simple
+        else:
+          - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
+
   # set TRVs
   - if:
       - condition: template
-        value_template: >
-          {{ override_max is not none
-            and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
+        value_template: "{{ is_override_max }}"
     then: # override/maintenance mode
       - service: climate.set_hvac_mode
         target:
@@ -395,10 +451,8 @@ action:
     else:
       - if:
           - condition: template
-            value_template: >
-              {{ (winter_mode is not none and is_state(winter_mode, 'off'))
-              or (windows_opened > 0) }}
-        then: # summer_mode (winter_mode==off)
+            value_template: "{{ is_summer or (windows_opened > 0) }}"
+        then: # summer_mode (winter_mode==off) or windows opened
           - service: climate.set_hvac_mode
             target:
               entity_id: !input valves
