@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 0.06-beta (b52)
+    **Version** 1.0 (b53)
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -153,6 +153,7 @@ blueprint:
             - domain:
               - person
               - device_tracker
+              - input_boolean
           multiple: true
     away_temp:
       name: (optional) Away Temperature
@@ -235,7 +236,7 @@ variables:
     {% endif %}
   persons_home: >
     {% if persons is not none %}
-      {{ expand(persons) | selectattr('state', 'eq', 'home') | list | count }}
+      {{ expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count }}
     {% else %}
       -1
     {% endif %}
