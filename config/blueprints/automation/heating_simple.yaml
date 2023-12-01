@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control** 
-    **Version** 1.02-b60
+    **Version** 1.03-b61
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -339,39 +339,46 @@ trigger:
   - platform: template # scheduler switching to on
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'on') }}
+    alias: 'scheduler switching to on'
     for:
       seconds: !input event_delay
   - platform: template # scheduler switching to off
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'off') }}
+    alias: 'scheduler switching to off'
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to on
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'on') }}
+    alias: 'winter mode switching to on'
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to off
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'off') }}
+    alias: 'winter mode switching to off'
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to on
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
+    alias: 'override switching to on'
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to off
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
+    alias: 'override switching to off'
     for:
       seconds: !input event_delay
   - platform: template # windows closed (opened == 0)
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+    alias: 'windows closed'
     for:
       #minutes: !input windowopened_delay # don't use on closing windows
       seconds: !input event_delay
@@ -379,31 +386,40 @@ trigger:
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+    alias: 'window opened'
     for:
       minutes: !input windowopened_delay
   - platform: template # nobody home
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
+    alias: 'nobody home'
     for:
       minutes: !input nobodyhome_delay
   - platform: template # somebody home
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
+    alias: 'someone came home'
     for:
       #minutes: !input nobodyhome_delay # don't use on getting home
       seconds: !input event_delay
   - platform: template # party mode switching to on
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
+    alias: 'party mode switching to on'
     for:
       seconds: !input event_delay
   - platform: template # party mode switching to off
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
+    alias: 'party mode switching to off'
     for:
       seconds: !input event_delay
 
-mode: restart # stop and restart on multiple calls
+mode: parallel # run in parallel
+max: 3 # no more than 3 running at once
+# maybe mode should be changed to queued to prevent missing changes
+#mode: restart # stop and restart on multiple calls
+#max_exceeded: silent
 
 action:
   - service: system_log.write
