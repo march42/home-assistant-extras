@@ -1,8 +1,8 @@
 blueprint:
   name: Heating Simple
   description: |
-    **simplified heating control** 
-    **Version** 1.03-b61
+    **simplified heating control**
+    **Version** 1.03-b64
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -128,6 +128,7 @@ blueprint:
               - input_boolean
               - timer
           multiple: true
+
     window:
       name: (optional) Window sensor
       description: >
@@ -152,6 +153,7 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+
     persons:
       name: (optional) Persons for presence detection
       description: >
@@ -192,6 +194,7 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+
     party_mode:
       name: (optional) Party ongoing (timer or boolean)
       description: >
@@ -217,6 +220,33 @@ blueprint:
             - domain:
               - input_number
           multiple: false
+
+    antifreeze_temp:
+      name: Anti Freeze Temperature
+      description: >
+        Temperature, to use as trigger for anti freeze action.
+        Heating target will be set to 3°C above.
+        Good common practice is heating to 8°C once the anti freeze was triggered on 5°C.
+      default: 5
+      selector:
+        number:
+          min: 0.0
+          max: 10.0
+          step: 0.1
+          mode: slider
+          unit_of_measurement: °C
+    antifreeze_delay:
+      name: Delay Antifreeze Event
+      description: >
+        Time in minutes before taking actions, if current temp hitting anti freeze point.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
 
 variables:
   # get the settings to variables
@@ -299,6 +329,10 @@ variables:
   is_temp_manual: > # trigger, on temperature changed manually
     {{ is_temp_changed and not is_override_max and windows_opened == 0
       and trigger.to_state.attributes.temperature != scheduled_temp }}
+  trigger_antifreeze: > # trigger, on current temperature below 5°C
+    {{ trigger is not none and trigger.id == 'antifreeze' }}
+  antifreeze_temp: !input antifreeze_temp
+  is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
 
 trigger_variables:
   scheduler: !input scheduler
@@ -320,14 +354,14 @@ trigger:
   # configuration changes occured
   - platform: state
     entity_id:
-      - !input scheduler
+      #- !input scheduler # handled by template later
       - !input comfort_temp
       #- !input away_temp # state trigger doesn't work with optional, if unset
       #- !input party_temp # state trigger doesn't work with optional, if unset
     for:
       seconds: !input event_delay
-  # radiator valve changed manually
-  - platform: state # temperature changed
+
+  - platform: state # temperature setting changed
     entity_id: !input valves
     attribute: temperature
     alias: 'temperature changed on TRV'
@@ -335,32 +369,45 @@ trigger:
     for:
       minutes: !input manually_revert_delay
       seconds: 13 # delay always, to ensure manually handling is done
-  # template trigger
+  - platform: numeric_state # frosty temperature
+    id: "antifreeze"
+    entity_id: !input valves
+    attribute: current_temperature
+    alias: 'antifreeze'
+    below: !input antifreeze_temp
+    for:
+      minutes: !input antifreeze_delay
+
   - platform: template # scheduler switching to on
+    id: "scheduler_start"
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'on') }}
     alias: 'scheduler switching to on'
     for:
       seconds: !input event_delay
   - platform: template # scheduler switching to off
+    id: "scheduler_end"
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'off') }}
     alias: 'scheduler switching to off'
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to on
+    id: "winter_start"
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'on') }}
     alias: 'winter mode switching to on'
     for:
       seconds: !input event_delay
   - platform: template # winter mode switching to off
+    id: "winter_end"
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'off') }}
     alias: 'winter mode switching to off'
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to on
+    id: "override_start"
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
@@ -368,6 +415,7 @@ trigger:
     for:
       seconds: !input event_delay
   - platform: template # override mode switching to off
+    id: "override_end"
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
@@ -375,6 +423,7 @@ trigger:
     for:
       seconds: !input event_delay
   - platform: template # windows closed (opened == 0)
+    id: "window_closed"
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
@@ -383,6 +432,7 @@ trigger:
       #minutes: !input windowopened_delay # don't use on closing windows
       seconds: !input event_delay
   - platform: template # windows opened > 0
+    id: "window_opened"
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
@@ -390,12 +440,14 @@ trigger:
     for:
       minutes: !input windowopened_delay
   - platform: template # nobody home
+    id: "nobody_home"
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
     alias: 'nobody home'
     for:
       minutes: !input nobodyhome_delay
   - platform: template # somebody home
+    id: "somebody_home"
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
     alias: 'someone came home'
@@ -403,12 +455,14 @@ trigger:
       #minutes: !input nobodyhome_delay # don't use on getting home
       seconds: !input event_delay
   - platform: template # party mode switching to on
+    id: "party_start"
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     alias: 'party mode switching to on'
     for:
       seconds: !input event_delay
   - platform: template # party mode switching to off
+    id: "party_end"
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
     alias: 'party mode switching to off'
@@ -432,6 +486,31 @@ action:
       level: info
       logger: blueprints.march42.climate
 
+  - if: # current temperature on TRV below anti freeze trigger point
+      - condition: template
+        value_template: "{{ trigger_antifreeze }}"
+    then:
+      - service: system_log.write
+        data:
+          message: >
+            anti freeze triggered
+            on {{ trigger.entity_id }}
+            current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ antifreeze_temp }}
+          level: warning
+          logger: blueprints.march42.climate
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: trigger.entity_id
+        data:
+          hvac_mode: 'heat'
+      - delay:
+          seconds: !input action_delay
+      - service: climate.set_temperature
+        data:
+          entity_id: trigger.entity_id
+          temperature: 8.0 #{{ antifreeze_temp + 3.0 }}
+      - stop: "anti freeze set heating to 8°C"
+
   - if: # temperature on TRV changed
       - condition: template
         value_template: "{{ is_temp_changed }}"
@@ -446,7 +525,7 @@ action:
               message: >
                 revert from temperature changed manually ({{ trigger.from_state.attributes.temperature }} to {{ trigger.to_state.attributes.temperature }})
               level: info
-              logger: blueprints.march42.heating_simple
+              logger: blueprints.march42.climate
         else:
           - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
 
@@ -476,7 +555,7 @@ action:
               entity_id: !input valves
             data:
               hvac_mode: 'off'
-        else:
+        else: # scheduled heating
           - service: climate.set_hvac_mode
             target:
               entity_id: !input valves
@@ -484,6 +563,24 @@ action:
               hvac_mode: 'heat'
           - delay:
               seconds: !input action_delay
+          - if: # boost temp, if scheduled start and temp 2° below
+              - condition: template
+                value_template: >
+                  {{ is_scheduler_start and state_attr('trigger.to_state','current_temperature') <= (scheduled_temp - 2.0) }}
+            then:
+              - service: system_log.write
+                data:
+                  message: >
+                    starting with boost on {{ trigger.entity_id }}
+                    current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ scheduled_temp }}
+                  level: info
+                  logger: blueprints.march42.climate
+              - service: climate.set_temperature
+                data:
+                  entity_id: !input valves
+                  temperature: 99.0
+              - delay:
+                  minutes: 15
           - service: climate.set_temperature
             data:
               entity_id: !input valves
