@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.03-b64
+    **Version** 1.04-b65
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -221,33 +221,6 @@ blueprint:
               - input_number
           multiple: false
 
-    antifreeze_temp:
-      name: Anti Freeze Temperature
-      description: >
-        Temperature, to use as trigger for anti freeze action.
-        Heating target will be set to 3°C above.
-        Good common practice is heating to 8°C once the anti freeze was triggered on 5°C.
-      default: 5
-      selector:
-        number:
-          min: 0.0
-          max: 10.0
-          step: 0.1
-          mode: slider
-          unit_of_measurement: °C
-    antifreeze_delay:
-      name: Delay Antifreeze Event
-      description: >
-        Time in minutes before taking actions, if current temp hitting anti freeze point.
-      default: 3
-      selector:
-        number:
-          min: 0
-          max: 9
-          step: 1
-          mode: slider
-          unit_of_measurement: minutes
-
 variables:
   # get the settings to variables
   valves: !input valves
@@ -329,9 +302,7 @@ variables:
   is_temp_manual: > # trigger, on temperature changed manually
     {{ is_temp_changed and not is_override_max and windows_opened == 0
       and trigger.to_state.attributes.temperature != scheduled_temp }}
-  trigger_antifreeze: > # trigger, on current temperature below 5°C
-    {{ trigger is not none and trigger.id == 'antifreeze' }}
-  antifreeze_temp: !input antifreeze_temp
+
   is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
 
 trigger_variables:
@@ -369,14 +340,6 @@ trigger:
     for:
       minutes: !input manually_revert_delay
       seconds: 13 # delay always, to ensure manually handling is done
-  - platform: numeric_state # frosty temperature
-    id: "antifreeze"
-    entity_id: !input valves
-    attribute: current_temperature
-    alias: 'antifreeze'
-    below: !input antifreeze_temp
-    for:
-      minutes: !input antifreeze_delay
 
   - platform: template # scheduler switching to on
     id: "scheduler_start"
@@ -485,31 +448,6 @@ action:
         scheduled {{ scheduled_preset }}, {{ scheduled_temp }}
       level: info
       logger: blueprints.march42.climate
-
-  - if: # current temperature on TRV below anti freeze trigger point
-      - condition: template
-        value_template: "{{ trigger_antifreeze }}"
-    then:
-      - service: system_log.write
-        data:
-          message: >
-            anti freeze triggered
-            on {{ trigger.entity_id }}
-            current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ antifreeze_temp }}
-          level: warning
-          logger: blueprints.march42.climate
-      - service: climate.set_hvac_mode
-        target:
-          entity_id: trigger.entity_id
-        data:
-          hvac_mode: 'heat'
-      - delay:
-          seconds: !input action_delay
-      - service: climate.set_temperature
-        data:
-          entity_id: trigger.entity_id
-          temperature: 8.0 #{{ antifreeze_temp + 3.0 }}
-      - stop: "anti freeze set heating to 8°C"
 
   - if: # temperature on TRV changed
       - condition: template

@@ -1,0 +1,129 @@
+blueprint:
+  name: Heating Service
+  description: |
+    **heating control service functions**
+    **Version** 1.00-b01
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+    Copyright (C) 2023 Marc Hefter
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/heating_simple.yaml
+  domain: automation
+
+  input:
+    valves:
+      name: Heating Valves
+      description: Thermostats (thermostatic regulated valves) to be controlled with this settings
+      selector:
+        entity:
+          filter:
+            - domain:
+              - climate
+          multiple: true
+    action_delay:
+      name: Delay Actions
+      description: >
+        Time in seconds delaying between subsequent actions.
+        To ensure the components are ready again.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: seconds
+
+    antifreeze_temp:
+      name: Anti Freeze Temperature
+      description: >
+        Temperature, to use as trigger for anti freeze action.
+        Heating target will be set to 3°C above.
+        Good common practice is heating to 8°C once the anti freeze was triggered on 5°C.
+      default: 5
+      selector:
+        number:
+          min: 0.0
+          max: 10.0
+          step: 0.1
+          mode: slider
+          unit_of_measurement: °C
+    antifreeze_delay:
+      name: Delay Antifreeze Event
+      description: >
+        Time in minutes before taking actions, if current temp hitting anti freeze point.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
+
+variables:
+  # get the settings to variables
+  valves: !input valves
+  trigger_antifreeze: > # trigger, on current temperature below 5°C
+    {{ trigger is not none and trigger.id == 'antifreeze' }}
+  antifreeze_temp: !input antifreeze_temp
+
+trigger:
+  - platform: numeric_state # frosty temperature
+    id: "antifreeze"
+    entity_id: !input valves
+    attribute: current_temperature
+    alias: 'antifreeze'
+    below: !input antifreeze_temp
+    for:
+      minutes: !input antifreeze_delay
+
+mode: queued
+max: 3
+#max_exceeded: silent
+
+action:
+  - if: # current temperature on TRV below anti freeze trigger point
+      - condition: trigger
+        id: "antifreeze"
+    then:
+      - variables:
+          heating_setpoint: "{{ antifreeze_temp + 3.0 }}"
+      - service: system_log.write
+        data:
+          message: >
+            anti freeze triggered
+            on {{ trigger.entity_id }}
+            current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ antifreeze_temp }}
+            setting to {{ heating_setpoint }}
+          level: warning
+          logger: blueprints.march42.climate
+      - service: climate.turn_on
+        target:
+          entity_id: "{{ trigger.entity_id }}"
+      - delay:
+          seconds: !input action_delay
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: "{{ trigger.entity_id }}"
+        data:
+          hvac_mode: 'heat'
+      - delay:
+          seconds: !input action_delay
+      - service: climate.set_temperature
+        data:
+          entity_id: "{{ trigger.entity_id }}"
+          temperature: "{{ heating_setpoint }}"
+      - stop: "anti freeze set heating temperature"
