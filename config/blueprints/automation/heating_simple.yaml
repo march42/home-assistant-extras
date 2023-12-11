@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.04-b65
+    **Version** 1.05-b66
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -304,6 +304,13 @@ variables:
       and trigger.to_state.attributes.temperature != scheduled_temp }}
 
   is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
+#  current_temp: > # current temperature on trigger
+#    {% if trigger is not none and trigger.to_state is not none %}
+#      {{ trigger.to_state.attributes.current_temperature | float }}
+#    {% else %}
+#      -1.0
+#    {% endif %}
+  #current_temp: "{{ trigger.to_state is not none and states(trigger.to_state.attributes.current_temperature) | default(-1.0) | float }}"
 
 trigger_variables:
   scheduler: !input scheduler
@@ -320,8 +327,6 @@ trigger:
   # platform events
   - platform: homeassistant
     event: start
-  - platform: event
-    event_type: automation_reloaded
   # configuration changes occured
   - platform: state
     entity_id:
@@ -333,6 +338,7 @@ trigger:
       seconds: !input event_delay
 
   - platform: state # temperature setting changed
+    id: 'TRV_temp_changed'
     entity_id: !input valves
     attribute: temperature
     alias: 'temperature changed on TRV'
@@ -450,8 +456,8 @@ action:
       logger: blueprints.march42.climate
 
   - if: # temperature on TRV changed
-      - condition: template
-        value_template: "{{ is_temp_changed }}"
+      - condition: trigger
+        id: 'TRV_temp_changed'
     then: # temperature changed trigger
       - if: # ignore valid changes
           - condition: template
@@ -461,7 +467,8 @@ action:
           - service: system_log.write
             data:
               message: >
-                revert from temperature changed manually ({{ trigger.from_state.attributes.temperature }} to {{ trigger.to_state.attributes.temperature }})
+                revert from manually temperature changed,
+                {{ trigger.from_state.attributes.temperature }} to {{ trigger.to_state.attributes.temperature }}
               level: info
               logger: blueprints.march42.climate
         else:
@@ -503,8 +510,8 @@ action:
               seconds: !input action_delay
           - if: # boost temp, if scheduled start and temp 2° below
               - condition: template
-                value_template: >
-                  {{ is_scheduler_start and state_attr('trigger.to_state','current_temperature') <= (scheduled_temp - 2.0) }}
+                value_template: > # trigger.to_state has no value here
+                  {{ is_scheduler_start and scheduled_temp | float - states(trigger.to_state.attributes.current_temperature) | float >= 2.0 }}
             then:
               - service: system_log.write
                 data:
