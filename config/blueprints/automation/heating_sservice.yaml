@@ -2,7 +2,7 @@ blueprint:
   name: Heating Service
   description: |
     **heating control service functions**
-    **Version** 1.00-b01
+    **Version** 1.00-b02
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -76,8 +76,7 @@ blueprint:
 variables:
   # get the settings to variables
   valves: !input valves
-  trigger_antifreeze: > # trigger, on current temperature below 5°C
-    {{ trigger is not none and trigger.id == 'antifreeze' }}
+
   antifreeze_temp: !input antifreeze_temp
 
 trigger:
