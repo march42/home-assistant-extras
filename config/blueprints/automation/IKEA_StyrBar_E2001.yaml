@@ -1,0 +1,381 @@
+blueprint:
+  name: IKEA Styrbar Remote E2001/E2002 (ZHA)
+  description: >
+    **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
+
+    **Version** 1.00-b07
+
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+
+    Simplified [Malte](https://community.home-assistant.io/u/Malte)''s [version](https://community.home-assistant.io/t/zha-ikea-four-button-remote-styrbar-for-lights-e2001-e2002/384482)
+    which extends [SwerveShot](https://community.home-assistant.io/u/SwerveShot)''s [version](https://community.home-assistant.io/t/zha-ikea-four-button-remote-for-lights/347657)
+    which is based on the work of [frenck](https://community.home-assistant.io/u/frenck)
+    with the five button version.
+
+
+    **Functions**
+
+    single, short press
+
+    ON/UP switch on, OFF/DOWN switch off, LEFT switch to color_temp, RIGHT switch to color
+
+    holding
+
+    ON/UP increase brightness, OFF/DOWN decrease brightness, LEFT loop color_temp, RIGHT loop color
+
+
+    Copyright (C) Malte, SwerveShot, frenck
+
+    Copyright (C) 2023 Marc Hefter
+
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/IKEA_StyrBar_E2001.yaml
+  domain: automation
+
+  input:
+    remote:
+      name: Remote
+      description: IKEA remote to use
+      selector:
+        device:
+          integration: zha
+          manufacturer: IKEA of Sweden
+          model: Remote Control N2
+    light:
+      name: Light(s)
+      description: The light(s) to control
+      selector:
+        entity:
+          filter:
+            - domain:
+              - light
+              - switch
+          multiple: true
+    lights:
+      name: Light(s)
+      description: The light(s) to control
+      selector:
+        target:
+          entity:
+            domain: light
+
+    hold_time:
+      name: Hold Time
+      description: Time between the execution of the brighter/darker actions when holding the brighter/darker button.
+      default: 0.5
+      selector:
+        number:
+          min: 0.1
+          max: 2
+          step: 0.1
+          unit_of_measurement: seconds
+
+variables:
+  light_input: !input "light"
+  light_master: "{{ light_input | first }}" # first light
+  light_expanded: "{{ expand(light_input) | map(attribute='entity_id') | list }}" # reversed list
+  light_onoff: "{{ expand(light_input) | selectattr('supported_color_modes') | map(attribute='entity_id') | list }}"
+  light_brightness: "{{ expand(light_input) | selectattr('color_mode','eq','brightness') | map(attribute='entity_id') | list }}"
+  light_colortemp: "{{ expand(light_input) | selectattr('color_mode','eq','color_temp') | map(attribute='entity_id') | list }}"
+  light_colorxy: "{{ expand(light_input) | selectattr('color_mode','eq','xy') | map(attribute='entity_id') | list }}"
+  # lights selector, domain light
+  lights_input: !input "lights"
+  lights_expanded: "{{ lights_input | selectattr('supported_color_modes') | list }}"
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: event
+    event_type: zha_event
+    id: "remote control"
+    event_data:
+      device_id: !input "remote"
+  - platform: event
+    event_type: automation_reloaded
+    id: "automation_reloaded"
+
+action:
+  - variables: # trigger data handling
+      endpoint_id: "{{ trigger.event.data.endpoint_id }}"
+      cluster_id: "{{ trigger.event.data.cluster_id }}"
+      command: "{{ trigger.event.data.command }}"
+      args: "{{ trigger.event.data.args }}"
+      params: "{{ trigger.event.data.params }}"
+
+  - choose:
+    - conditions: # ON single press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 6 }}"
+        - "{{ command == 'on' }}"
+      sequence:
+        - service: light.turn_on
+          target:
+            entity_id: !input "light"
+        - service: homeassistant.turn_on
+          target:
+            entity_id: "{{ expand(light_input) | selectattr('state','eq','off') | map(attribute='entity_id') | list }}"
+
+    - conditions: # OFF single press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 6 }}"
+        - "{{ command == 'off' }}"
+      sequence:
+        - service: light.turn_off
+          target:
+            entity_id: !input "light"
+        - service: homeassistant.turn_off
+          target:
+            entity_id: "{{ expand(light_input) | selectattr('state','eq','on') | map(attribute='entity_id') | list }}"
+
+    - conditions: # ON holding
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 8 }}"
+        - "{{ command == 'move_with_on_off' }}"
+        # args [0,83]
+        # params [move_mode:0,rate:83]
+      sequence:
+        - repeat:
+            count: 20
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: !input "light"
+                data:
+                  brightness_step_pct: 5
+                  #transition: !input "hold_time"
+              - delay: !input "hold_time"
+        - service: light.turn_on
+          target:
+            entity_id: !input "light"
+          data:
+            flash: short
+
+    - conditions: # ON holding released
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 8 }}"
+        - "{{ command == 'stop_with_on_off' }}"
+      sequence:
+        - delay: !input "hold_time"
+
+    - conditions: # OFF holding
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 8 }}"
+        - "{{ command == 'move' }}"
+        # args [1,83,0,0]
+        # params [move_mode:1,rate:83,options_mask:0,options_override:0]
+      sequence:
+        - repeat:
+            count: 20
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: !input "light"
+                data:
+                  brightness_step_pct: -5
+                  #transition: !input "hold_time"
+              - delay: !input "hold_time"
+        - service: light.turn_on
+          target:
+            entity_id: !input "light"
+          data:
+            flash: short
+
+    - conditions: # OFF holding released
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 8 }}"
+        - "{{ command == 'stop_with_on_off' }}"
+      sequence:
+        - delay: !input "hold_time"
+
+    - conditions: # LEFT single press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'press' }}"
+        - "{{ args == [257, 13, 0] }}" # 257=LEFT
+        #- "{{ is_state(light_master,'off') }}" # only, if light off
+      sequence:
+        # switch light to color_temp
+        - service: light.turn_on
+          target:
+            entity_id: !input "light"
+          data:
+            color_temp_kelvin: 4000
+            brightness: |
+              {% if state_attr(light_master, 'off_brightness') is not none %}
+                {{ state_attr(light_master, 'off_brightness') }}
+              {% else %}
+                {{ state_attr(light_master, 'brightness') | default(96) }}
+              {% endif %}
+
+    - conditions: # RIGHT single press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'press' }}"
+        - "{{ args == [256, 13, 0] }}" # 256=RIGHT
+        #- "{{ is_state(light_master,'off') }}" # only, if light off
+      sequence:
+        # maybe, switch light to color
+        - service: light.turn_on
+          target:
+            entity_id: !input "light"
+          data:
+            hs_color: "{{ state_attr(light_master, 'hs_color') | default([30,60]) }}"
+
+    #- conditions: # LEFT holding (first) is LEFT release (args==[0])
+    #- conditions: # LEFT holding (second) is ON single press (args==[])
+    #- conditions: # LEFT holding (third) is recall (recall, args==[0,0,0])
+    - conditions: # LEFT holding (forth)
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'hold' }}"
+        - "{{ args == [3329, 0] }}"
+      sequence:
+        # switch color mode and color
+        - variables:
+            light_colortemp: "{{ light_master }}" # the master light, directing the color change
+            colortemp_min: "{{ state_attr(light_master, 'min_color_temp_kelvin') | default(2700) }}"
+            colortemp_max: "{{ state_attr(light_master, 'max_color_temp_kelvin') | default(6500) }}"
+        - repeat:
+            until: "{{ state_attr(light_master, 'color_temp_kelvin') == state_attr(light_master, 'min_color_temp_kelvin') }}"
+            sequence:
+              - variables:
+                  colortemp_current: "{{ state_attr(light_master, 'color_temp_kelvin') | default(4000) }}"
+                  colortemp_next: | # calculate next value
+                    {% if colortemp_current == colortemp_min %}
+                      {{ colortemp_max }}
+                    {% else %}
+                      {% if colortemp_current - 500 >= colortemp_min %}
+                        {{ colortemp_current - 500 }}
+                      {% else %}
+                        {{ colortemp_min }}
+                      {% endif %}
+                    {% endif %}
+              - service: light.turn_on
+                target:
+                  entity_id: !input "light"
+                data:
+                  color_temp_kelvin: "{{ colortemp_next }}"
+              - delay: !input "hold_time"
+
+    #- conditions: # RIGHT holding (first) is RIGHT release (args==[0])
+    #- conditions: # RIGHT holding (second) is ON single press (args==[])
+    #- conditions: # RIGHT holding (third) is recall (args==[2,0,0])
+    - conditions: # RIGHT holding (forth)
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'hold' }}"
+        - "{{ args == [3328, 0] }}" # maybe the time key was held
+      sequence:
+        # switch color mode and color
+        - variables:
+            light_color: "{{ light_master }}" # the master light, directing the color change
+            # HUE= 0-360, SATuration= 0-100
+        - repeat:
+            until: "{{ state_attr(light_master, 'hs_color')[0] in [0,color_maxhue] }}"
+            sequence:
+              - variables:
+                  color_minhue: 0
+                  color_maxhue: 360
+                  color_current: "{{ state_attr(light_master, 'hs_color') | default([0,36]) }}"
+                  color_nexthue: | # calculate next hue value
+                    {% if color_current[0] == color_maxhue %}
+                      {{ color_minhue }}
+                    {% else %}
+                      {% if color_current[0] + 30 <= color_maxhue %}
+                        {{ color_current[0] + 30 }}
+                      {% else %}
+                        {{ color_maxhue }}
+                      {% endif %}
+                    {% endif %}
+              - service: light.turn_on
+                target:
+                  entity_id: !input "light"
+                data:
+                  hs_color:
+                    - "{{ color_nexthue }}"
+                    - "{{ color_current[1] }}"
+              - delay: !input "hold_time"
+
+    - conditions: # LEFT holding released
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'release' }}"
+        - "{{ args[0] > 0 }}" # above 0 is left
+      sequence:
+        - delay: !input "hold_time"
+
+    - conditions: # RIGHT holding released
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'release' }}"
+        - "{{ args[0] < 0 }}" # below 0 is right
+      sequence:
+        - delay: !input "hold_time"
+
+    - conditions: # recall settings (third step on holding LEFT/RIGHT)
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'recall' }}"
+        #- "{{ args == [0,0,0] }}"
+        #- [ params: [ group_id: 0, scene_id: 0, transition_time: 0]]
+      sequence:
+        - delay: !input "hold_time"
+
+    - conditions: # checkin
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 32 }}"
+        - "{{ command == 'checkin' }}"
+        #- "{{ args == [] }}"
+      sequence:
+        - delay: !input "hold_time"
+
+#supported_color_modes:
+#  - color_temp
+#  - xy
+#color_mode: color_temp
+
+#supported_color_modes:
+#  - onoff
+
+#supported_color_modes:
+#  - brightness
+
+#min_color_temp_kelvin: 2000
+#max_color_temp_kelvin: 6535
+#min_mireds: 153
+#max_mireds: 500
+#effect_list:
+#  - colorloop
+#brightness: 163
+#color_temp_kelvin: 3521
+#color_temp: 284
+#hs_color:
+#  - 27.152
+#  - 44.32
+#rgb_color:
+#  - 255
+#  - 193
+#  - 141
+#xy_color:
+#  - 0.453
+#  - 0.374
+#off_with_transition: false
+#off_brightness: null
+#friendly_name: Fensterleuchte Light
+#supported_features: 44
