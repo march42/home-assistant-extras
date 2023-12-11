@@ -3,7 +3,7 @@ blueprint:
   description: >
     **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
 
-    **Version** 1.00-b07
+    **Version** 1.01-b09
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -88,11 +88,11 @@ blueprint:
 variables:
   light_input: !input "light"
   light_master: "{{ light_input | first }}" # first light
-  light_expanded: "{{ expand(light_input) | map(attribute='entity_id') | list }}" # reversed list
-  light_onoff: "{{ expand(light_input) | selectattr('supported_color_modes') | map(attribute='entity_id') | list }}"
-  light_brightness: "{{ expand(light_input) | selectattr('color_mode','eq','brightness') | map(attribute='entity_id') | list }}"
-  light_colortemp: "{{ expand(light_input) | selectattr('color_mode','eq','color_temp') | map(attribute='entity_id') | list }}"
-  light_colorxy: "{{ expand(light_input) | selectattr('color_mode','eq','xy') | map(attribute='entity_id') | list }}"
+  #light_expanded: "{{ expand(light_input) | map(attribute='entity_id') | list }}" # reversed list
+  #light_onoff: "{{ expand(light_input) | selectattr('supported_color_modes') | map(attribute='entity_id') | list }}"
+  #light_brightness: "{{ expand(light_input) | selectattr('color_mode','eq','brightness') | map(attribute='entity_id') | list }}"
+  #light_colortemp: "{{ expand(light_input) | selectattr('color_mode','eq','color_temp') | map(attribute='entity_id') | list }}"
+  #light_colorxy: "{{ expand(light_input) | selectattr('color_mode','eq','xy') | map(attribute='entity_id') | list }}"
   # lights selector, domain light
   lights_input: !input "lights"
   lights_expanded: "{{ lights_input | selectattr('supported_color_modes') | list }}"
@@ -106,9 +106,9 @@ trigger:
     id: "remote control"
     event_data:
       device_id: !input "remote"
-  - platform: event
-    event_type: automation_reloaded
-    id: "automation_reloaded"
+  #- platform: event
+  #  event_type: automation_reloaded
+  #  id: "automation_reloaded"
 
 action:
   - variables: # trigger data handling
@@ -220,7 +220,11 @@ action:
               {% if state_attr(light_master, 'off_brightness') is not none %}
                 {{ state_attr(light_master, 'off_brightness') }}
               {% else %}
-                {{ state_attr(light_master, 'brightness') | default(96) }}
+                {% if state_attr(light_master, 'brightness') is not none %}
+                  {{ state_attr(light_master, 'brightness') }}
+                {% else %}
+                  96
+                {% endif %}
               {% endif %}
 
     - conditions: # RIGHT single press
@@ -235,7 +239,12 @@ action:
           target:
             entity_id: !input "light"
           data:
-            hs_color: "{{ state_attr(light_master, 'hs_color') | default([30,60]) }}"
+            hs_color: | #"{{ state_attr(light_master, 'hs_color') | default([30,60]) }}"
+              {% if state_attr(light_master, 'hs_color') is not none %}
+                {{ state_attr(light_master, 'hs_color') }}
+              {% else %}
+                [30,60]
+              {% endif %}
 
     #- conditions: # LEFT holding (first) is LEFT release (args==[0])
     #- conditions: # LEFT holding (second) is ON single press (args==[])
@@ -344,38 +353,3 @@ action:
         #- "{{ args == [] }}"
       sequence:
         - delay: !input "hold_time"
-
-#supported_color_modes:
-#  - color_temp
-#  - xy
-#color_mode: color_temp
-
-#supported_color_modes:
-#  - onoff
-
-#supported_color_modes:
-#  - brightness
-
-#min_color_temp_kelvin: 2000
-#max_color_temp_kelvin: 6535
-#min_mireds: 153
-#max_mireds: 500
-#effect_list:
-#  - colorloop
-#brightness: 163
-#color_temp_kelvin: 3521
-#color_temp: 284
-#hs_color:
-#  - 27.152
-#  - 44.32
-#rgb_color:
-#  - 255
-#  - 193
-#  - 141
-#xy_color:
-#  - 0.453
-#  - 0.374
-#off_with_transition: false
-#off_brightness: null
-#friendly_name: Fensterleuchte Light
-#supported_features: 44
