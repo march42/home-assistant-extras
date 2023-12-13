@@ -3,7 +3,7 @@ blueprint:
   description: >
     **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
 
-    **Version** 1.01-b09
+    **Version** 1.01-b10
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -264,7 +264,12 @@ action:
             until: "{{ state_attr(light_master, 'color_temp_kelvin') == state_attr(light_master, 'min_color_temp_kelvin') }}"
             sequence:
               - variables:
-                  colortemp_current: "{{ state_attr(light_master, 'color_temp_kelvin') | default(4000) }}"
+                  colortemp_current: |
+                    {% if state_attr(light_master, 'color_temp_kelvin') is not none %}
+                      {{ state_attr(light_master, 'color_temp_kelvin') }}
+                    {% else %}
+                      4000
+                    {% endif %}
                   colortemp_next: | # calculate next value
                     {% if colortemp_current == colortemp_min %}
                       {{ colortemp_max }}
