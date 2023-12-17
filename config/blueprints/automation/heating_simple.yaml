@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.05-b66
+    **Version** 1.06-b68
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -302,15 +302,8 @@ variables:
   is_temp_manual: > # trigger, on temperature changed manually
     {{ is_temp_changed and not is_override_max and windows_opened == 0
       and trigger.to_state.attributes.temperature != scheduled_temp }}
-
   is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
-#  current_temp: > # current temperature on trigger
-#    {% if trigger is not none and trigger.to_state is not none %}
-#      {{ trigger.to_state.attributes.current_temperature | float }}
-#    {% else %}
-#      -1.0
-#    {% endif %}
-  #current_temp: "{{ trigger.to_state is not none and states(trigger.to_state.attributes.current_temperature) | default(-1.0) | float }}"
+  valves_master: "{{ valves | first }}" # first valve
 
 trigger_variables:
   scheduler: !input scheduler
@@ -501,6 +494,8 @@ action:
             data:
               hvac_mode: 'off'
         else: # scheduled heating
+          - variables:
+              current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
           - service: climate.set_hvac_mode
             target:
               entity_id: !input valves
@@ -508,24 +503,22 @@ action:
               hvac_mode: 'heat'
           - delay:
               seconds: !input action_delay
-          - if: # boost temp, if scheduled start and temp 2° below
+          - if:
               - condition: template
-                value_template: > # trigger.to_state has no value here
-                  {{ is_scheduler_start and scheduled_temp | float - states(trigger.to_state.attributes.current_temperature) | float >= 2.0 }}
-            then:
-              - service: system_log.write
-                data:
-                  message: >
-                    starting with boost on {{ trigger.entity_id }}
-                    current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ scheduled_temp }}
-                  level: info
-                  logger: blueprints.march42.climate
+                value_template: "{{ is_scheduler_start and (current_temp | float) + 3.0 < (scheduled_temp | float) }}"
+            then: # boost heating, to warm up
               - service: climate.set_temperature
                 data:
                   entity_id: !input valves
-                  temperature: 99.0
-              - delay:
+                  temperature: "{{ (scheduled_temp | float) + 3.0 }}"
+              - wait_for_trigger:
+                  - platform: numeric_state
+                    entity_id: !input valves
+                    value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point }}"
+                    above: 1.0
+                timeout:
                   minutes: 15
+                continue_on_timeout: true
           - service: climate.set_temperature
             data:
               entity_id: !input valves
