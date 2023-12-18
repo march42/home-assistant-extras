@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.06-b68
+    **Version** 1.06-b69
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -43,21 +43,44 @@ blueprint:
             - domain:
               - schedule
           multiple: false
-    eco_temp:
-      name: Eco Temperature
+    min_temp:
+      name: Minimum Temperature
       description: >
         Temperature, to use as minimum.
-        This will be used, if scheduler is off, e.g. during night periods.
-      default: 13
+        This is used as a default value, if Eco Temperature not specified.
+      default: 12
       selector:
         number:
           min: 5.0
-          max: 30.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+    eco_temp:
+      name: (optional) Eco Temperature
+      description: Temperature, to use if scheduler is off, e.g. during night periods.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_number
+          multiple: false
+      default:
+    day_temp:
+      name: Day Temperature
+      description: >
+        Temperature, to use for active heating.
+        This is used as a default value, if Comfort Temperature not specified.
+      default: 18
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
           step: 0.5
           mode: slider
           unit_of_measurement: °C
     comfort_temp:
-      name: Comfort Temperature
+      name: (optional) Comfort Temperature
       description: Temperature, to use if scheduler in on and someone is at home.
       selector:
         entity:
@@ -65,6 +88,7 @@ blueprint:
             - domain:
               - input_number
           multiple: false
+      default:
     event_delay:
       name: Delay Event
       description: >
@@ -224,14 +248,21 @@ blueprint:
 variables:
   # get the settings to variables
   valves: !input valves
-  eco_temp: !input eco_temp
+  min_temp: !input min_temp
+  eco_temp: > # the eco/low temp during heating periods
+    {% if eco_temp_input is not none %}
+      {{ states(eco_temp_input) | float }}
+    {% else %}
+      {{ min_temp }}
+    {% endif %}
   manually_revert_delay: !input manually_revert_delay
   # interpret settings to state variables
+  day_temp: !input day_temp
   comfort_temp: >
     {% if comfort_temp_input is not none %}
       {{ states(comfort_temp_input) | float }}
     {% else %}
-      {{ eco_temp }}
+      {{ day_temp }}
     {% endif %}
   away_temp: >
     {% if away_temp_input is not none %}
@@ -307,6 +338,7 @@ variables:
 
 trigger_variables:
   scheduler: !input scheduler
+  eco_temp_input: !input eco_temp
   comfort_temp_input: !input comfort_temp
   window: !input window
   override_max: !input override_max
@@ -320,15 +352,6 @@ trigger:
   # platform events
   - platform: homeassistant
     event: start
-  # configuration changes occured
-  - platform: state
-    entity_id:
-      #- !input scheduler # handled by template later
-      - !input comfort_temp
-      #- !input away_temp # state trigger doesn't work with optional, if unset
-      #- !input party_temp # state trigger doesn't work with optional, if unset
-    for:
-      seconds: !input event_delay
 
   - platform: state # temperature setting changed
     id: 'TRV_temp_changed'
@@ -494,8 +517,6 @@ action:
             data:
               hvac_mode: 'off'
         else: # scheduled heating
-          - variables:
-              current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
           - service: climate.set_hvac_mode
             target:
               entity_id: !input valves
@@ -503,9 +524,11 @@ action:
               hvac_mode: 'heat'
           - delay:
               seconds: !input action_delay
-          - if:
+          - variables:
+              current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
+          - if: # current temperature at least 3° lower
               - condition: template
-                value_template: "{{ is_scheduler_start and (current_temp | float) + 3.0 < (scheduled_temp | float) }}"
+                value_template: "{{ is_scheduler_start and (current_temp | float) + 3.0 <= (scheduled_temp | float) }}"
             then: # boost heating, to warm up
               - service: climate.set_temperature
                 data:
@@ -519,6 +542,7 @@ action:
                 timeout:
                   minutes: 15
                 continue_on_timeout: true
+          # set desired heating set point
           - service: climate.set_temperature
             data:
               entity_id: !input valves
