@@ -3,7 +3,7 @@ blueprint:
   description: >
     **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
 
-    **Version** 1.01-b10
+    **Version** 2.00-b15
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -23,6 +23,8 @@ blueprint:
     holding
 
     ON/UP increase brightness, OFF/DOWN decrease brightness, LEFT loop color_temp, RIGHT loop color
+
+    double, tripple press ON/UP, OFF/DOWN, RIGHT, LEFT
 
 
     Copyright (C) Malte, SwerveShot, frenck
@@ -48,7 +50,7 @@ blueprint:
   domain: automation
 
   input:
-    remote:
+    remote: # IKEA Remote Control
       name: Remote
       description: IKEA remote to use
       selector:
@@ -56,59 +58,144 @@ blueprint:
           integration: zha
           manufacturer: IKEA of Sweden
           model: Remote Control N2
-    light:
+    lights: # the controlled lights
       name: Light(s)
-      description: The light(s) to control
-      selector:
-        entity:
-          filter:
-            - domain:
-              - light
-              - switch
-          multiple: true
-    lights:
-      name: Light(s)
-      description: The light(s) to control
+      description: >
+        The light(s) to control.
+
+        The first configured **light entity** will act as master for looping the colors.
+        This should be the one with most features.
+        **Please choose this entity first.**
       selector:
         target:
           entity:
             domain: light
+    switches: # additional switches, only for on/off
+      name: Switch(es)
+      description: >
+        Additional switch(es) to control.
+
+        These switches will be switched on and off when pressing ON and OFF.
+      selector:
+        target:
+          entity:
+            domain: switch
+      default: none
 
     hold_time:
       name: Hold Time
       description: Time between the execution of the brighter/darker actions when holding the brighter/darker button.
-      default: 0.5
+      default: 0.4
       selector:
         number:
           min: 0.1
           max: 2
           step: 0.1
           unit_of_measurement: seconds
+    hold_step:
+      name: Hold Step Value
+      description: Percentage value, to step up/down while holding UP/DOWN.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          unit_of_measurement: percent
+
+    press_time:
+      name: Press Time
+      description: Time between pressing the button, to determine double and tripple pressing.
+      default: 1.0
+      selector:
+        number:
+          min: 0.1
+          max: 2
+          step: 0.1
+          unit_of_measurement: seconds
+    double_on:
+      name: (Optional) ON Double Press
+      description: Action(s) to run, on double pressing ON
+      selector:
+        action: {}
+      default: []
+    tripple_on:
+      name: (Optional) ON Tripple Press
+      description: Action(s) to run, on tripple pressing ON
+      selector:
+        action: {}
+      default: []
+    double_off:
+      name: (Optional) OFF Double Press
+      description: Action(s) to run, on double pressing OFF
+      selector:
+        action: {}
+      default: []
+    tripple_off:
+      name: (Optional) OFF Tripple Press
+      description: Action(s) to run, on tripple pressing OFF
+      selector:
+        action: {}
+      default: []
+    double_right:
+      name: (Optional) RIGHT Double Press
+      description: Action(s) to run, on double pressing RIGHT
+      selector:
+        action: {}
+      default: []
+    tripple_right:
+      name: (Optional) RIGHT Tripple Press
+      description: Action(s) to run, on tripple pressing RIGHT
+      selector:
+        action: {}
+      default: []
+    double_left:
+      name: (Optional) LEFT Double Press
+      description: Action(s) to run, on double pressing LEFT
+      selector:
+        action: {}
+      default: []
+    tripple_left:
+      name: (Optional) LEFT Tripple Press
+      description: Action(s) to run, on tripple pressing LEFT
+      selector:
+        action: {}
+      default: []
 
 variables:
-  light_input: !input "light"
-  light_master: "{{ light_input | first }}" # first light
-  #light_expanded: "{{ expand(light_input) | map(attribute='entity_id') | list }}" # reversed list
-  #light_onoff: "{{ expand(light_input) | selectattr('supported_color_modes') | map(attribute='entity_id') | list }}"
-  #light_brightness: "{{ expand(light_input) | selectattr('color_mode','eq','brightness') | map(attribute='entity_id') | list }}"
-  #light_colortemp: "{{ expand(light_input) | selectattr('color_mode','eq','color_temp') | map(attribute='entity_id') | list }}"
-  #light_colorxy: "{{ expand(light_input) | selectattr('color_mode','eq','xy') | map(attribute='entity_id') | list }}"
-  # lights selector, domain light
   lights_input: !input "lights"
-  lights_expanded: "{{ lights_input | selectattr('supported_color_modes') | list }}"
+  switches_input: !input "switches"
+  controlling_master: "{{ expand(lights_input.entity_id) | map(attribute='entity_id') | list | first }}" # first light
+  hold_step_input: !input hold_step
+  hold_step: > # handle configured value
+    {% if hold_step_input < 1 %}
+      1
+    {% else %}
+      {% if hold_step_input > 10 %}
+        10
+      {% else %}
+        {{ hold_step_input | int }}
+      {% endif %}
+    {% endif %}
+
+  input_double_on: !input double_on
+  input_tripple_on: !input tripple_on
+  input_double_off: !input double_off
+  input_tripple_off: !input tripple_off
+  input_double_right: !input double_right
+  input_tripple_right: !input tripple_right
+  input_double_left: !input double_left
+  input_tripple_left: !input tripple_left
 
 mode: restart
 max_exceeded: silent
 
 trigger:
-  - platform: event
-    event_type: zha_event
+  - platform: event # zha_event for the choosen remote control
     id: "remote control"
+    event_type: zha_event
     event_data:
       device_id: !input "remote"
-  #- platform: event
-  #  event_type: automation_reloaded
-  #  id: "automation_reloaded"
 
 action:
   - variables: # trigger data handling
@@ -119,29 +206,107 @@ action:
       params: "{{ trigger.event.data.params }}"
 
   - choose:
-    - conditions: # ON single press
+    - conditions: # ON single/double/tripple press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 6 }}"
         - "{{ command == 'on' }}"
       sequence:
-        - service: light.turn_on
-          target:
-            entity_id: !input "light"
-        - service: homeassistant.turn_on
-          target:
-            entity_id: "{{ expand(light_input) | selectattr('state','eq','off') | map(attribute='entity_id') | list }}"
+        # wait for trigger, to check double press
+        - wait_for_trigger:
+            - platform: event
+              event_type: zha_event
+              event_data:
+                device_id: !input "remote"
+                endpoint_id: 1
+                cluster_id: 6
+                command: "on"
+          timeout:
+            seconds: !input press_time
+          continue_on_timeout: true
+        - if:
+            - "{{ wait.trigger is not none }}"
+          then: # double press
+#            # wait for trigger, to check tripple press
+#            - wait_for_trigger:
+#                - platform: event
+#                  event_type: zha_event
+#                  event_data:
+#                    device_id: !input "remote"
+#                    endpoint_id: 1
+#                    cluster_id: 6
+#                    command: "on"
+#              timeout:
+#                seconds: !input press_time
+#              continue_on_timeout: true
+#            - if:
+#                - "{{ wait.trigger is not none }}"
+#              then: # tripple press
+#                - alias: "Run the configured action"
+#                  choose: []
+#                  default: !input tripple_on
+#              else: # double press
+                - alias: "Run the configured action"
+                  choose: []
+                  default: !input double_on
+          else: # single press
+            - service: light.turn_on
+              target: !input "lights"
+            - if:
+                - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
+              then:
+                - service: homeassistant.turn_on
+                  target: "{{ switches_input }}"
 
-    - conditions: # OFF single press
+    - conditions: # OFF single/double/tripple press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 6 }}"
         - "{{ command == 'off' }}"
       sequence:
-        - service: light.turn_off
-          target:
-            entity_id: !input "light"
-        - service: homeassistant.turn_off
-          target:
-            entity_id: "{{ expand(light_input) | selectattr('state','eq','on') | map(attribute='entity_id') | list }}"
+        # wait for trigger, to check double press
+        - wait_for_trigger:
+            - platform: event
+              event_type: zha_event
+              event_data:
+                device_id: !input "remote"
+                endpoint_id: 1
+                cluster_id: 6
+                command: "off"
+          timeout:
+            seconds: !input press_time
+          continue_on_timeout: true
+        - if:
+            - "{{ wait.trigger is not none }}"
+          then: # double press
+            # wait for trigger, to check tripple press
+            - wait_for_trigger:
+                - platform: event
+                  event_type: zha_event
+                  event_data:
+                    device_id: !input "remote"
+                    endpoint_id: 1
+                    cluster_id: 6
+                    command: "off"
+              timeout:
+                seconds: !input press_time
+              continue_on_timeout: true
+            - if:
+                - "{{ wait.trigger is not none }}"
+              then: # tripple press
+                - alias: "Run the configured action"
+                  choose: []
+                  default: !input tripple_off
+              else: # double press
+                - alias: "Run the configured action"
+                  choose: []
+                  default: !input double_off
+          else: # single press
+            - service: light.turn_off
+              target: !input "lights"
+            - if:
+                - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
+              then:
+                - service: homeassistant.turn_off
+                  target: "{{ switches_input }}"
 
     - conditions: # ON holding
         - "{{ endpoint_id == 1 }}"
@@ -150,19 +315,34 @@ action:
         # args [0,83]
         # params [move_mode:0,rate:83]
       sequence:
+        - if: # switch on first
+            - condition: template
+              value_template: "{{ is_state(controlling_master,'off') }}"
+          then: # light is off
+            - service: light.turn_on
+              target: !input "lights"
+              data:
+                brightness_pct: "{{ hold_step | int }}"
+                #transition: !input "hold_time"
+            - delay: !input "hold_time"
         - repeat:
-            count: 20
+            while: "{{ is_state(controlling_master,'on') and state_attr(controlling_master, 'brightness') <= 250 }}"
             sequence:
               - service: light.turn_on
-                target:
-                  entity_id: !input "light"
+                target: !input "lights"
                 data:
-                  brightness_step_pct: 5
+                  brightness_step_pct: "{{ hold_step | int }}"
                   #transition: !input "hold_time"
               - delay: !input "hold_time"
+        # last step is setting full brightness
         - service: light.turn_on
-          target:
-            entity_id: !input "light"
+          target: !input "lights"
+          data:
+            brightness: 255
+        - delay: !input "hold_time"
+        # short blink, before ending
+        - service: light.turn_on
+          target: !input "lights"
           data:
             flash: short
 
@@ -171,7 +351,7 @@ action:
         - "{{ cluster_id == 8 }}"
         - "{{ command == 'stop_with_on_off' }}"
       sequence:
-        - delay: !input "hold_time"
+        - delay: "00:00:00.001"
 
     - conditions: # OFF holding
         - "{{ endpoint_id == 1 }}"
@@ -181,47 +361,56 @@ action:
         # params [move_mode:1,rate:83,options_mask:0,options_override:0]
       sequence:
         - repeat:
-            count: 20
+            while: "{{ is_state(controlling_master,'on') and state_attr(controlling_master, 'brightness') > 5 }}"
             sequence:
               - service: light.turn_on
-                target:
-                  entity_id: !input "light"
+                target: !input "lights"
                 data:
-                  brightness_step_pct: -5
+                  brightness_step_pct: "{{ -1 * hold_step | int }}"
                   #transition: !input "hold_time"
               - delay: !input "hold_time"
-        - service: light.turn_on
-          target:
-            entity_id: !input "light"
-          data:
-            flash: short
+        - if: # some switch off when dimming down
+            - condition: template
+              value_template: "{{ is_state(controlling_master,'on') }}"
+          then: # still on
+            # after stepping down, set minimum brightness
+            - service: light.turn_on
+              target: !input "lights"
+              data:
+                brightness: 1
+            - delay: !input "hold_time"
+            # short blink, before ending
+            - service: light.turn_on
+              target: !input "lights"
+              data:
+                flash: short
+          else: # leave off
 
     - conditions: # OFF holding released
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 8 }}"
         - "{{ command == 'stop_with_on_off' }}"
       sequence:
-        - delay: !input "hold_time"
+        - delay: "00:00:00.001"
 
     - conditions: # LEFT single press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 5 }}"
         - "{{ command == 'press' }}"
         - "{{ args == [257, 13, 0] }}" # 257=LEFT
-        #- "{{ is_state(light_master,'off') }}" # only, if light off
+        #- "{{ is_state(controlling_master,'off') }}" # only, if light off
       sequence:
         # switch light to color_temp
         - service: light.turn_on
-          target:
-            entity_id: !input "light"
+          target: !input "lights"
           data:
-            color_temp_kelvin: 4000
+            color_temp_kelvin: 5000
             brightness: |
-              {% if state_attr(light_master, 'off_brightness') is not none %}
-                {{ state_attr(light_master, 'off_brightness') }}
+              {% if state_attr(controlling_master, 'off_brightness') is not none %}
+                {{ state_attr(controlling_master, 'off_brightness') }}
               {% else %}
-                {% if state_attr(light_master, 'brightness') is not none %}
-                  {{ state_attr(light_master, 'brightness') }}
+                {% if state_attr(controlling_master, 'brightness') is not none %}
+                  {{ state_attr(controlling_master, 'brightness') }}
                 {% else %}
                   96
                 {% endif %}
@@ -232,23 +421,32 @@ action:
         - "{{ cluster_id == 5 }}"
         - "{{ command == 'press' }}"
         - "{{ args == [256, 13, 0] }}" # 256=RIGHT
-        #- "{{ is_state(light_master,'off') }}" # only, if light off
+        #- "{{ is_state(controlling_master,'off') }}" # only, if light off
       sequence:
         # maybe, switch light to color
         - service: light.turn_on
-          target:
-            entity_id: !input "light"
+          target: !input "lights"
           data:
-            hs_color: | #"{{ state_attr(light_master, 'hs_color') | default([30,60]) }}"
-              {% if state_attr(light_master, 'hs_color') is not none %}
-                {{ state_attr(light_master, 'hs_color') }}
+            hs_color: | #"{{ state_attr(controlling_master, 'hs_color') | default([30,60]) }}"
+              {% if state_attr(controlling_master, 'hs_color') is not none %}
+                {{ state_attr(controlling_master, 'hs_color') }}
               {% else %}
                 [30,60]
               {% endif %}
 
+    - conditions: # recall settings (third step on holding LEFT/RIGHT)
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'recall' }}"
+        #- "{{ args == [0,0,0] }}" # LEFT
+        #- "{{ args == [2,0,0] }}" # RIGHT
+        #- [ params: [ group_id: 0, scene_id: 0, transition_time: 0]]
+      sequence:
+        - delay: "00:00:00.001" # 1ms
+
     #- conditions: # LEFT holding (first) is LEFT release (args==[0])
     #- conditions: # LEFT holding (second) is ON single press (args==[])
-    #- conditions: # LEFT holding (third) is recall (recall, args==[0,0,0])
+    #- conditions: # LEFT holding (third) is recall (args==[0,0,0])
     - conditions: # LEFT holding (forth)
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 5 }}"
@@ -257,16 +455,17 @@ action:
       sequence:
         # switch color mode and color
         - variables:
-            light_colortemp: "{{ light_master }}" # the master light, directing the color change
-            colortemp_min: "{{ state_attr(light_master, 'min_color_temp_kelvin') | default(2700) }}"
-            colortemp_max: "{{ state_attr(light_master, 'max_color_temp_kelvin') | default(6500) }}"
+            light_colortemp: "{{ controlling_master }}" # the master light, directing the color change
+            colortemp_min: "{{ state_attr(controlling_master, 'min_color_temp_kelvin') | default(2700) }}"
+            colortemp_max: "{{ state_attr(controlling_master, 'max_color_temp_kelvin') | default(6500) }}"
+            colortemp_step: "{{ (40 * hold_step) | int }}" # 400 Kelvin for 10% stepping
         - repeat:
-            until: "{{ state_attr(light_master, 'color_temp_kelvin') == state_attr(light_master, 'min_color_temp_kelvin') }}"
+            until: "{{ state_attr(controlling_master, 'color_temp_kelvin') == state_attr(controlling_master, 'min_color_temp_kelvin') }}"
             sequence:
               - variables:
                   colortemp_current: |
-                    {% if state_attr(light_master, 'color_temp_kelvin') is not none %}
-                      {{ state_attr(light_master, 'color_temp_kelvin') }}
+                    {% if state_attr(controlling_master, 'color_temp_kelvin') is not none %}
+                      {{ state_attr(controlling_master, 'color_temp_kelvin') }}
                     {% else %}
                       4000
                     {% endif %}
@@ -274,18 +473,18 @@ action:
                     {% if colortemp_current == colortemp_min %}
                       {{ colortemp_max }}
                     {% else %}
-                      {% if colortemp_current - 500 >= colortemp_min %}
-                        {{ colortemp_current - 500 }}
+                      {% if colortemp_current - colortemp_step >= colortemp_min %}
+                        {{ colortemp_current - colortemp_step }}
                       {% else %}
                         {{ colortemp_min }}
                       {% endif %}
                     {% endif %}
               - service: light.turn_on
-                target:
-                  entity_id: !input "light"
+                target: !input "lights"
                 data:
                   color_temp_kelvin: "{{ colortemp_next }}"
               - delay: !input "hold_time"
+    #- conditions: # LEFT holding (fifth) is release, after releasing the button
 
     #- conditions: # RIGHT holding (first) is RIGHT release (args==[0])
     #- conditions: # RIGHT holding (second) is ON single press (args==[])
@@ -298,15 +497,16 @@ action:
       sequence:
         # switch color mode and color
         - variables:
-            light_color: "{{ light_master }}" # the master light, directing the color change
+            light_color: "{{ controlling_master }}" # the master light, directing the color change
             # HUE= 0-360, SATuration= 0-100
+            color_step: "{{ (3.6 * hold_step) | int }}" # 36 Kelvin for 10% stepping
         - repeat:
-            until: "{{ state_attr(light_master, 'hs_color')[0] in [0,color_maxhue] }}"
+            until: "{{ state_attr(controlling_master, 'hs_color')[0] in [0,color_maxhue] }}"
             sequence:
               - variables:
                   color_minhue: 0
                   color_maxhue: 360
-                  color_current: "{{ state_attr(light_master, 'hs_color') | default([0,36]) }}"
+                  color_current: "{{ state_attr(controlling_master, 'hs_color') | default([0,36]) }}"
                   color_nexthue: | # calculate next hue value
                     {% if color_current[0] == color_maxhue %}
                       {{ color_minhue }}
@@ -318,13 +518,13 @@ action:
                       {% endif %}
                     {% endif %}
               - service: light.turn_on
-                target:
-                  entity_id: !input "light"
+                target: !input "lights"
                 data:
                   hs_color:
                     - "{{ color_nexthue }}"
                     - "{{ color_current[1] }}"
               - delay: !input "hold_time"
+    #- conditions: # RIGHT holding (fifth) is release, after releasing the button
 
     - conditions: # LEFT holding released
         - "{{ endpoint_id == 1 }}"
@@ -332,7 +532,7 @@ action:
         - "{{ command == 'release' }}"
         - "{{ args[0] > 0 }}" # above 0 is left
       sequence:
-        - delay: !input "hold_time"
+        - delay: "00:00:00.001" # 1ms
 
     - conditions: # RIGHT holding released
         - "{{ endpoint_id == 1 }}"
@@ -340,16 +540,7 @@ action:
         - "{{ command == 'release' }}"
         - "{{ args[0] < 0 }}" # below 0 is right
       sequence:
-        - delay: !input "hold_time"
-
-    - conditions: # recall settings (third step on holding LEFT/RIGHT)
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 5 }}"
-        - "{{ command == 'recall' }}"
-        #- "{{ args == [0,0,0] }}"
-        #- [ params: [ group_id: 0, scene_id: 0, transition_time: 0]]
-      sequence:
-        - delay: !input "hold_time"
+        - delay: "00:00:00.001" # 1ms
 
     - conditions: # checkin
         - "{{ endpoint_id == 1 }}"
@@ -357,4 +548,4 @@ action:
         - "{{ command == 'checkin' }}"
         #- "{{ args == [] }}"
       sequence:
-        - delay: !input "hold_time"
+        - delay: "00:00:00.001" # 1ms
