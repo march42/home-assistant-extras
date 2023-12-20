@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.06-b69
+    **Version** 1.06-b71
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -329,12 +329,17 @@ variables:
       {% endif %}
     {% endif %}
   is_temp_changed: > # trigger, on temperature changed
-    {{ trigger is not none and trigger.platform == 'state' and trigger.attribute == 'temperature' }}
+    {{ trigger is not none }}
   is_temp_manual: > # trigger, on temperature changed manually
     {{ is_temp_changed and not is_override_max and windows_opened == 0
       and trigger.to_state.attributes.temperature != scheduled_temp }}
   is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
-  valves_master: "{{ valves | first }}" # first valve
+  valves_master: > # triggering valve or first, if no trigger
+    {% if trigger is not none and trigger.id == 'TRV_temp_changed' %}
+      {{ trigger.entity_id }}
+    {% else %}
+      {{ valves | first }}
+    {% endif %}
 
 trigger_variables:
   scheduler: !input scheduler
@@ -483,9 +488,9 @@ action:
           - service: system_log.write
             data:
               message: >
-                revert from manually temperature changed,
-                {{ trigger.from_state.attributes.temperature }} to {{ trigger.to_state.attributes.temperature }}
-              level: info
+                revert from manually changed temperature,
+                changed to {{ trigger.to_state.attributes.temperature }} from {{ trigger.from_state.attributes.temperature }} 
+              level: warning
               logger: blueprints.march42.climate
         else:
           - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
@@ -503,8 +508,9 @@ action:
       - delay:
           seconds: !input action_delay
       - service: climate.set_temperature
-        data:
+        target:
           entity_id: !input valves
+        data:
           temperature: 99.0
     else:
       - if:
@@ -531,8 +537,9 @@ action:
                 value_template: "{{ is_scheduler_start and (current_temp | float) + 3.0 <= (scheduled_temp | float) }}"
             then: # boost heating, to warm up
               - service: climate.set_temperature
-                data:
+                target:
                   entity_id: !input valves
+                data:
                   temperature: "{{ (scheduled_temp | float) + 3.0 }}"
               - wait_for_trigger:
                   - platform: numeric_state
@@ -544,6 +551,7 @@ action:
                 continue_on_timeout: true
           # set desired heating set point
           - service: climate.set_temperature
-            data:
+            target:
               entity_id: !input valves
+            data:
               temperature: "{{ scheduled_temp | float }}"
