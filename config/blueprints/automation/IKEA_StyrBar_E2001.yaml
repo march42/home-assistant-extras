@@ -3,7 +3,7 @@ blueprint:
   description: >
     **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
 
-    **Version** 2.00-b15
+    **Version** 2.00-b18
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -24,7 +24,8 @@ blueprint:
 
     ON/UP increase brightness, OFF/DOWN decrease brightness, LEFT loop color_temp, RIGHT loop color
 
-    double, tripple press ON/UP, OFF/DOWN, RIGHT, LEFT
+
+    double press ON/UP, OFF/DOWN, RIGHT, LEFT with configurable commands
 
 
     Copyright (C) Malte, SwerveShot, frenck
@@ -105,8 +106,13 @@ blueprint:
 
     press_time:
       name: Press Time
-      description: Time between pressing the button, to determine double and tripple pressing.
-      default: 1.0
+      description: >
+        Time between pressing the button, to determine double and tripple pressing.
+
+        Best option seems to be a little below 500ms.
+        When holding RIGHT/LEFT, the time between 1st step (release) and 2nd step (ON) is about 500ms.
+        When too high, the ON will get a false double pressed.
+      default: 0.4
       selector:
         number:
           min: 0.1
@@ -119,21 +125,9 @@ blueprint:
       selector:
         action: {}
       default: []
-    tripple_on:
-      name: (Optional) ON Tripple Press
-      description: Action(s) to run, on tripple pressing ON
-      selector:
-        action: {}
-      default: []
     double_off:
       name: (Optional) OFF Double Press
       description: Action(s) to run, on double pressing OFF
-      selector:
-        action: {}
-      default: []
-    tripple_off:
-      name: (Optional) OFF Tripple Press
-      description: Action(s) to run, on tripple pressing OFF
       selector:
         action: {}
       default: []
@@ -143,21 +137,9 @@ blueprint:
       selector:
         action: {}
       default: []
-    tripple_right:
-      name: (Optional) RIGHT Tripple Press
-      description: Action(s) to run, on tripple pressing RIGHT
-      selector:
-        action: {}
-      default: []
     double_left:
       name: (Optional) LEFT Double Press
       description: Action(s) to run, on double pressing LEFT
-      selector:
-        action: {}
-      default: []
-    tripple_left:
-      name: (Optional) LEFT Tripple Press
-      description: Action(s) to run, on tripple pressing LEFT
       selector:
         action: {}
       default: []
@@ -178,17 +160,14 @@ variables:
       {% endif %}
     {% endif %}
 
-  input_double_on: !input double_on
-  input_tripple_on: !input tripple_on
-  input_double_off: !input double_off
-  input_tripple_off: !input tripple_off
-  input_double_right: !input double_right
-  input_tripple_right: !input tripple_right
-  input_double_left: !input double_left
-  input_tripple_left: !input tripple_left
+  press_time: !input press_time
+  double_pressed: > # calculate last_triggered offset and check for double pressed
+    {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+    {% set seconds_last_triggered = as_timestamp(now()) - ts_last_triggered %}
+    {{ seconds_last_triggered <= press_time }}
 
 mode: restart
-max_exceeded: silent
+max_exceeded: warning
 
 trigger:
   - platform: event # zha_event for the choosen remote control
@@ -206,114 +185,63 @@ action:
       params: "{{ trigger.event.data.params }}"
 
   - choose:
-    - conditions: # ON single/double/tripple press
+
+    - conditions: # ON single press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 6 }}"
         - "{{ command == 'on' }}"
+        - "{{ not double_pressed }}"
       sequence:
-        # wait for trigger, to check double press
-        - wait_for_trigger:
-            - platform: event
-              event_type: zha_event
-              event_data:
-                device_id: !input "remote"
-                endpoint_id: 1
-                cluster_id: 6
-                command: "on"
-          timeout:
-            seconds: !input press_time
-          continue_on_timeout: true
+        - delay: # wait for occuring double press
+            seconds: "{{ press_time }}"
+        - service: light.turn_on
+          target: !input "lights"
         - if:
-            - "{{ wait.trigger is not none }}"
-          then: # double press
-#            # wait for trigger, to check tripple press
-#            - wait_for_trigger:
-#                - platform: event
-#                  event_type: zha_event
-#                  event_data:
-#                    device_id: !input "remote"
-#                    endpoint_id: 1
-#                    cluster_id: 6
-#                    command: "on"
-#              timeout:
-#                seconds: !input press_time
-#              continue_on_timeout: true
-#            - if:
-#                - "{{ wait.trigger is not none }}"
-#              then: # tripple press
-#                - alias: "Run the configured action"
-#                  choose: []
-#                  default: !input tripple_on
-#              else: # double press
-                - alias: "Run the configured action"
-                  choose: []
-                  default: !input double_on
-          else: # single press
-            - service: light.turn_on
-              target: !input "lights"
-            - if:
-                - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
-              then:
-                - service: homeassistant.turn_on
-                  target: "{{ switches_input }}"
+            - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
+          then:
+            - service: homeassistant.turn_on
+              target: "{{ switches_input }}"
+    - conditions: # ON double press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 6 }}"
+        - "{{ command == 'on' }}"
+        - "{{ double_pressed }}"
+      sequence:
+        - alias: "Run the configured action"
+          choose: []
+          default: !input double_on
 
-    - conditions: # OFF single/double/tripple press
+    - conditions: # OFF single press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 6 }}"
         - "{{ command == 'off' }}"
+        - "{{ not double_pressed }}"
       sequence:
-        # wait for trigger, to check double press
-        - wait_for_trigger:
-            - platform: event
-              event_type: zha_event
-              event_data:
-                device_id: !input "remote"
-                endpoint_id: 1
-                cluster_id: 6
-                command: "off"
-          timeout:
-            seconds: !input press_time
-          continue_on_timeout: true
+        - delay: # wait for occuring double press
+            seconds: "{{ press_time }}"
+        - service: light.turn_off
+          target: !input "lights"
         - if:
-            - "{{ wait.trigger is not none }}"
-          then: # double press
-            # wait for trigger, to check tripple press
-            - wait_for_trigger:
-                - platform: event
-                  event_type: zha_event
-                  event_data:
-                    device_id: !input "remote"
-                    endpoint_id: 1
-                    cluster_id: 6
-                    command: "off"
-              timeout:
-                seconds: !input press_time
-              continue_on_timeout: true
-            - if:
-                - "{{ wait.trigger is not none }}"
-              then: # tripple press
-                - alias: "Run the configured action"
-                  choose: []
-                  default: !input tripple_off
-              else: # double press
-                - alias: "Run the configured action"
-                  choose: []
-                  default: !input double_off
-          else: # single press
-            - service: light.turn_off
-              target: !input "lights"
-            - if:
-                - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
-              then:
-                - service: homeassistant.turn_off
-                  target: "{{ switches_input }}"
+            - "{{ has_value(switches_input) }}" # {{ switches_input is not none }} doesn't work here
+          then:
+            - service: homeassistant.turn_off
+              target: "{{ switches_input }}"
+    - conditions: # OFF double press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 6 }}"
+        - "{{ command == 'off' }}"
+        - "{{ double_pressed }}"
+      sequence:
+        - alias: "Run the configured action"
+          choose: []
+          default: !input double_off
 
     - conditions: # ON holding
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 8 }}"
         - "{{ command == 'move_with_on_off' }}"
-        # args [0,83]
-        # params [move_mode:0,rate:83]
+        #args: '[<MoveMode.Up: 0>, 83]'
+        #params: '{''move_mode'': <MoveMode.Up: 0>, ''rate'': 83}'
       sequence:
         - if: # switch on first
             - condition: template
@@ -346,12 +274,14 @@ action:
           data:
             flash: short
 
-    - conditions: # ON holding released
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 8 }}"
-        - "{{ command == 'stop_with_on_off' }}"
-      sequence:
-        - delay: "00:00:00.001"
+#    - conditions: # ON holding released
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 8 }}"
+#        - "{{ command == 'stop_with_on_off' }}"
+#        # args: []
+#        # params: {}
+#      sequence:
+#        - delay: "00:00:00.001"
 
     - conditions: # OFF holding
         - "{{ endpoint_id == 1 }}"
@@ -359,6 +289,8 @@ action:
         - "{{ command == 'move' }}"
         # args [1,83,0,0]
         # params [move_mode:1,rate:83,options_mask:0,options_override:0]
+        # args: '[<MoveMode.Down: 1>, 83, <bitmap8: 0>, <bitmap8: 0>]'
+        # params: '{'move_mode': <MoveMode.Down: 1>, 'rate': 83, 'options_mask': <bitmap8: 0>, 'options_override': <bitmap8: 0>}'
       sequence:
         - repeat:
             while: "{{ is_state(controlling_master,'on') and state_attr(controlling_master, 'brightness') > 5 }}"
@@ -386,35 +318,14 @@ action:
                 flash: short
           else: # leave off
 
-    - conditions: # OFF holding released
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 8 }}"
-        - "{{ command == 'stop_with_on_off' }}"
-      sequence:
-        - delay: "00:00:00.001"
-
-    - conditions: # LEFT single press
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 5 }}"
-        - "{{ command == 'press' }}"
-        - "{{ args == [257, 13, 0] }}" # 257=LEFT
-        #- "{{ is_state(controlling_master,'off') }}" # only, if light off
-      sequence:
-        # switch light to color_temp
-        - service: light.turn_on
-          target: !input "lights"
-          data:
-            color_temp_kelvin: 5000
-            brightness: |
-              {% if state_attr(controlling_master, 'off_brightness') is not none %}
-                {{ state_attr(controlling_master, 'off_brightness') }}
-              {% else %}
-                {% if state_attr(controlling_master, 'brightness') is not none %}
-                  {{ state_attr(controlling_master, 'brightness') }}
-                {% else %}
-                  96
-                {% endif %}
-              {% endif %}
+#    - conditions: # OFF holding released
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 8 }}"
+#        - "{{ command == 'stop' }}"
+#        #- "{{ args == [0, 0] }}"
+#        # params [options_mask: 0, options_override: 0]
+#      sequence:
+#        - delay: "00:00:00.001"
 
     - conditions: # RIGHT single press
         - "{{ endpoint_id == 1 }}"
@@ -422,7 +333,10 @@ action:
         - "{{ command == 'press' }}"
         - "{{ args == [256, 13, 0] }}" # 256=RIGHT
         #- "{{ is_state(controlling_master,'off') }}" # only, if light off
+        - "{{ not double_pressed }}"
       sequence:
+        - delay: # wait for occuring double press
+            seconds: "{{ press_time }}"
         # maybe, switch light to color
         - service: light.turn_on
           target: !input "lights"
@@ -433,20 +347,125 @@ action:
               {% else %}
                 [30,60]
               {% endif %}
-
-    - conditions: # recall settings (third step on holding LEFT/RIGHT)
+    - conditions: # RIGHT double press
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 5 }}"
-        - "{{ command == 'recall' }}"
-        #- "{{ args == [0,0,0] }}" # LEFT
-        #- "{{ args == [2,0,0] }}" # RIGHT
-        #- [ params: [ group_id: 0, scene_id: 0, transition_time: 0]]
+        - "{{ command == 'press' }}"
+        - "{{ args == [256, 13, 0] }}" # 256=RIGHT
+        #- "{{ is_state(controlling_master,'off') }}" # only, if light off
+        - "{{ double_pressed }}"
       sequence:
-        - delay: "00:00:00.001" # 1ms
+        - alias: "Run the configured action"
+          choose: []
+          default: !input double_right
 
-    #- conditions: # LEFT holding (first) is LEFT release (args==[0])
-    #- conditions: # LEFT holding (second) is ON single press (args==[])
-    #- conditions: # LEFT holding (third) is recall (args==[0,0,0])
+    - conditions: # LEFT single press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'press' }}"
+        - "{{ args == [257, 13, 0] }}" # 257=LEFT
+        #- "{{ is_state(controlling_master,'off') }}" # only, if light off
+        - "{{ not double_pressed }}"
+      sequence:
+        - delay: # wait for occuring double press
+            seconds: "{{ press_time }}"
+        - if:
+            - condition: template
+              value_template: "{{ is_state(controlling_master,'off') }}"
+          then:
+            # switch light to color_temp
+            - service: light.turn_on
+              target: !input "lights"
+              data:
+                color_temp_kelvin: 5000
+                brightness: |
+                  {% if state_attr(controlling_master, 'off_brightness') is not none %}
+                    {{ state_attr(controlling_master, 'off_brightness') }}
+                  {% else %}
+                    {% if state_attr(controlling_master, 'brightness') is not none %}
+                      {{ state_attr(controlling_master, 'brightness') }}
+                    {% else %}
+                      96
+                    {% endif %}
+                  {% endif %}
+    - conditions: # LEFT double press
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'press' }}"
+        - "{{ args == [257, 13, 0] }}" # 257=LEFT
+        - "{{ double_pressed }}"
+      sequence:
+        - alias: "Run the configured action"
+          choose: []
+          default: !input double_left
+
+#    #- conditions: # LEFT and RIGHT holding (first) is LEFT/RIGHT release (args==[0])
+#    - conditions: # LEFT/RIGHT holding released
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 5 }}"
+#        - "{{ command == 'release' }}"
+#        - "{{ args[0] == 0 }}"
+#      sequence:
+#        - delay: # delay, to prevent false double press (will get disturbed by mode:restart)
+#            seconds: "{{ press_time }}"
+
+#    - conditions: # recall settings (third step on holding LEFT/RIGHT)
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 5 }}"
+#        - "{{ command == 'recall' }}"
+#        #- "{{ args == [0,0,0] }}" # LEFT
+#        #- "{{ args == [2,0,0] }}" # RIGHT
+#        #- [ params: [ group_id: 0, scene_id: 0, transition_time: 0]]
+#      sequence:
+#        - delay: "00:00:00.001" # 1ms
+
+    #- conditions: # RIGHT holding (first) is RIGHT release (1,5,release, args==[0])
+    #- conditions: # RIGHT holding (second) is ON single press (1,6,on, args==[])
+    # last_triggered: '2023-12-27T18:02:21.128716+00:00'
+    # time_fired: '2023-12-27T18:02:21.622886+00:00'
+    #- conditions: # RIGHT holding (third) is recall (args==[2,0,0])
+    - conditions: # RIGHT holding (forth)
+        - "{{ endpoint_id == 1 }}"
+        - "{{ cluster_id == 5 }}"
+        - "{{ command == 'hold' }}"
+        - "{{ args == [3328, 0] }}" # maybe the time key was held
+      sequence:
+        # switch color mode and color
+        - variables:
+            light_color: "{{ controlling_master }}" # the master light, directing the color change
+            # HUE= 0-360, SATuration= 0-100
+            color_minhue: 0
+            color_maxhue: 360
+            color_step: "{{ (2 * hold_step) | int }}"
+        - repeat:
+            until: "{{ state_attr(controlling_master, 'hs_color')[0] in [0,color_maxhue] }}"
+            sequence:
+              - variables:
+                  color_current: "{{ state_attr(controlling_master, 'hs_color') | default([0,36]) }}"
+                  color_nexthue: | # calculate next hue value
+                    {% if color_current[0] == color_maxhue %}
+                      {{ color_minhue }}
+                    {% else %}
+                      {% if color_current[0] + color_step <= color_maxhue %}
+                        {{ color_current[0] + color_step }}
+                      {% else %}
+                        {{ color_maxhue }}
+                      {% endif %}
+                    {% endif %}
+              - service: light.turn_on
+                target: !input "lights"
+                data:
+                  hs_color:
+                    - "{{ color_nexthue }}"
+                    - "{{ color_current[1] }}"
+              - delay: !input "hold_time"
+    #- conditions: # RIGHT holding (fifth) is release, after releasing the button
+
+    #- conditions: # LEFT holding (first) is LEFT release (1,5,release, args==[0])
+    #- conditions: # LEFT holding (second) is ON single press (1,6,on, args==[])
+    #    last_triggered: '2023-12-27T18:02:21.128716+00:00'
+    #    time_fired: '2023-12-27T18:02:21.622886+00:00'
+    #- conditions: # LEFT holding (third) is recall (1,5,recall, args==[0,0,0])
     - conditions: # LEFT holding (forth)
         - "{{ endpoint_id == 1 }}"
         - "{{ cluster_id == 5 }}"
@@ -458,7 +477,7 @@ action:
             light_colortemp: "{{ controlling_master }}" # the master light, directing the color change
             colortemp_min: "{{ state_attr(controlling_master, 'min_color_temp_kelvin') | default(2700) }}"
             colortemp_max: "{{ state_attr(controlling_master, 'max_color_temp_kelvin') | default(6500) }}"
-            colortemp_step: "{{ (40 * hold_step) | int }}" # 400 Kelvin for 10% stepping
+            colortemp_step: "{{ (42 * hold_step) | int }}"
         - repeat:
             until: "{{ state_attr(controlling_master, 'color_temp_kelvin') == state_attr(controlling_master, 'min_color_temp_kelvin') }}"
             sequence:
@@ -486,66 +505,29 @@ action:
               - delay: !input "hold_time"
     #- conditions: # LEFT holding (fifth) is release, after releasing the button
 
-    #- conditions: # RIGHT holding (first) is RIGHT release (args==[0])
-    #- conditions: # RIGHT holding (second) is ON single press (args==[])
-    #- conditions: # RIGHT holding (third) is recall (args==[2,0,0])
-    - conditions: # RIGHT holding (forth)
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 5 }}"
-        - "{{ command == 'hold' }}"
-        - "{{ args == [3328, 0] }}" # maybe the time key was held
-      sequence:
-        # switch color mode and color
-        - variables:
-            light_color: "{{ controlling_master }}" # the master light, directing the color change
-            # HUE= 0-360, SATuration= 0-100
-            color_step: "{{ (3.6 * hold_step) | int }}" # 36 Kelvin for 10% stepping
-        - repeat:
-            until: "{{ state_attr(controlling_master, 'hs_color')[0] in [0,color_maxhue] }}"
-            sequence:
-              - variables:
-                  color_minhue: 0
-                  color_maxhue: 360
-                  color_current: "{{ state_attr(controlling_master, 'hs_color') | default([0,36]) }}"
-                  color_nexthue: | # calculate next hue value
-                    {% if color_current[0] == color_maxhue %}
-                      {{ color_minhue }}
-                    {% else %}
-                      {% if color_current[0] + 30 <= color_maxhue %}
-                        {{ color_current[0] + 30 }}
-                      {% else %}
-                        {{ color_maxhue }}
-                      {% endif %}
-                    {% endif %}
-              - service: light.turn_on
-                target: !input "lights"
-                data:
-                  hs_color:
-                    - "{{ color_nexthue }}"
-                    - "{{ color_current[1] }}"
-              - delay: !input "hold_time"
-    #- conditions: # RIGHT holding (fifth) is release, after releasing the button
+#    - conditions: # RIGHT holding released
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 5 }}"
+#        - "{{ command == 'release' }}"
+#        - "{{ args[0] < 0 }}" # below 0 is right
+#      sequence:
+#        - delay: "00:00:00.001" # 1ms
 
-    - conditions: # LEFT holding released
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 5 }}"
-        - "{{ command == 'release' }}"
-        - "{{ args[0] > 0 }}" # above 0 is left
-      sequence:
-        - delay: "00:00:00.001" # 1ms
+#    - conditions: # LEFT holding released
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 5 }}"
+#        - "{{ command == 'release' }}"
+#        - "{{ args[0] > 0 }}" # above 0 is left
+#      sequence:
+#        - delay: "00:00:00.001" # 1ms
 
-    - conditions: # RIGHT holding released
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 5 }}"
-        - "{{ command == 'release' }}"
-        - "{{ args[0] < 0 }}" # below 0 is right
-      sequence:
-        - delay: "00:00:00.001" # 1ms
+#    - conditions: # checkin
+#        - "{{ endpoint_id == 1 }}"
+#        - "{{ cluster_id == 32 }}"
+#        - "{{ command == 'checkin' }}"
+#        #- "{{ args == [] }}"
+#      sequence:
+#        - delay: "00:00:00.001" # 1ms
 
-    - conditions: # checkin
-        - "{{ endpoint_id == 1 }}"
-        - "{{ cluster_id == 32 }}"
-        - "{{ command == 'checkin' }}"
-        #- "{{ args == [] }}"
-      sequence:
-        - delay: "00:00:00.001" # 1ms
+    default:
+        - stop: "unhandled event {{ trigger.event.data }}"
