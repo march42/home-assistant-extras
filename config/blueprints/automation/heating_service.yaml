@@ -2,7 +2,7 @@ blueprint:
   name: Heating Service
   description: |
     **heating control service functions**
-    **Version** 1.00-b02
+    **Version** 1.00-b03
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -76,12 +76,14 @@ blueprint:
 variables:
   # get the settings to variables
   valves: !input valves
-
   antifreeze_temp: !input antifreeze_temp
+  seconds_since_last_triggered: > # calculate last_triggered offset and check for double pressed
+    {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+    {{ as_timestamp(now()) - ts_last_triggered }}
 
 trigger:
-  - platform: numeric_state # frosty temperature
-    id: "antifreeze"
+  - id: "antifreeze" # frosty temperature
+    platform: numeric_state
     entity_id: !input valves
     attribute: current_temperature
     alias: 'antifreeze'
@@ -94,35 +96,42 @@ max: 3
 #max_exceeded: silent
 
 action:
-  - if: # current temperature on TRV below anti freeze trigger point
-      - condition: trigger
-        id: "antifreeze"
-    then:
-      - variables:
-          heating_setpoint: "{{ antifreeze_temp + 3.0 }}"
-      - service: system_log.write
-        data:
-          message: >
-            anti freeze triggered
-            on {{ trigger.entity_id }}
-            current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ antifreeze_temp }}
-            setting to {{ heating_setpoint }}
-          level: warning
-          logger: blueprints.march42.climate
-      - service: climate.turn_on
-        target:
-          entity_id: "{{ trigger.entity_id }}"
-      - delay:
-          seconds: !input action_delay
-      - service: climate.set_hvac_mode
-        target:
-          entity_id: "{{ trigger.entity_id }}"
-        data:
-          hvac_mode: 'heat'
-      - delay:
-          seconds: !input action_delay
-      - service: climate.set_temperature
-        data:
-          entity_id: "{{ trigger.entity_id }}"
-          temperature: "{{ heating_setpoint }}"
-      - stop: "anti freeze set heating temperature"
+  - variables: # trigger data
+      triggered_valve: > # get triggering valve
+        {% if has_value(trigger) and has_value(trigger.entity_id) %}
+          {{ trigger.entity_id }}
+        {% endif %}
+
+  - choose:
+    - conditions: # antifreeze, current temperature on TRV below anti freeze trigger point
+        - condition: trigger
+          id: "antifreeze"
+      sequence:
+        - variables:
+            heating_setpoint: "{{ antifreeze_temp + 3.0 }}"
+        - service: system_log.write
+          data:
+            message: >
+              anti freeze triggered
+              on {{ trigger.entity_id }}
+              current temperature {{ trigger.to_state.attributes.current_temperature }} below {{ antifreeze_temp }}
+              setting to {{ heating_setpoint }}
+            level: warning
+            logger: blueprints.march42.climate
+        - service: climate.turn_on
+          target:
+            entity_id: "{{ trigger.entity_id }}"
+        - delay:
+            seconds: !input action_delay
+        - service: climate.set_hvac_mode
+          target:
+            entity_id: "{{ trigger.entity_id }}"
+          data:
+            hvac_mode: 'heat'
+        - delay:
+            seconds: !input action_delay
+        - service: climate.set_temperature
+          data:
+            entity_id: "{{ trigger.entity_id }}"
+            temperature: "{{ heating_setpoint }}"
+        #- stop: "anti freeze set heating temperature"
