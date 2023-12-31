@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.06-b71
+    **Version** 1.07-b74
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023 Marc Hefter
@@ -329,11 +329,18 @@ variables:
       {% endif %}
     {% endif %}
   is_temp_changed: > # trigger, on temperature changed
-    {{ trigger is not none }}
+    {{ trigger is not none and trigger.id == 'TRV_temp_changed' }}
   is_temp_manual: > # trigger, on temperature changed manually
     {{ is_temp_changed and not is_override_max and windows_opened == 0
       and trigger.to_state.attributes.temperature != scheduled_temp }}
   is_scheduler_start: "{{ trigger is not none and trigger.id == 'scheduler_start' }}"
+  is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
+  manual_event: >
+    {% if trigger is not none and trigger.id == 'manual_event' and trigger.event.event_type is not none %}
+      {{ trigger.event.event_type }}
+    {% else %}
+      none
+    {% endif %}
   valves_master: > # triggering valve or first, if no trigger
     {% if trigger is not none and trigger.id == 'TRV_temp_changed' %}
       {{ trigger.entity_id }}
@@ -355,11 +362,21 @@ trigger_variables:
 
 trigger:
   # platform events
-  - platform: homeassistant
+  - id: "homeassistant_start"
+    platform: homeassistant
     event: start
+  - id: "homeassistant_shutdown"
+    platform: homeassistant
+    event: shutdown
+  - id: "manual_event"
+    platform: event
+    event_type:
+      - "HEATING_RESET_TO_SCHEDULER"
+      - "HEATING_SET_ECO"
+      #- "{{ 'HEATING_' ~ sub_event }}"
 
-  - platform: state # temperature setting changed
-    id: 'TRV_temp_changed'
+  - id: 'TRV_temp_changed'
+    platform: state # temperature setting changed
     entity_id: !input valves
     attribute: temperature
     alias: 'temperature changed on TRV'
@@ -368,52 +385,52 @@ trigger:
       minutes: !input manually_revert_delay
       seconds: 13 # delay always, to ensure manually handling is done
 
-  - platform: template # scheduler switching to on
-    id: "scheduler_start"
+  - id: "scheduler_start"
+    platform: template # scheduler switching to on
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'on') }}
     alias: 'scheduler switching to on'
     for:
       seconds: !input event_delay
-  - platform: template # scheduler switching to off
-    id: "scheduler_end"
+  - id: "scheduler_end"
+    platform: template # scheduler switching to off
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'off') }}
     alias: 'scheduler switching to off'
     for:
       seconds: !input event_delay
-  - platform: template # winter mode switching to on
-    id: "winter_start"
+  - id: "winter_start"
+    platform: template # winter mode switching to on
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'on') }}
     alias: 'winter mode switching to on'
     for:
       seconds: !input event_delay
-  - platform: template # winter mode switching to off
-    id: "winter_end"
+  - id: "winter_end"
+    platform: template # winter mode switching to off
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'off') }}
     alias: 'winter mode switching to off'
     for:
       seconds: !input event_delay
-  - platform: template # override mode switching to on
-    id: "override_start"
+  - id: "override_start"
+    platform: template # override mode switching to on
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     alias: 'override switching to on'
     for:
       seconds: !input event_delay
-  - platform: template # override mode switching to off
-    id: "override_end"
+  - id: "override_end"
+    platform: template # override mode switching to off
     value_template: >
       {{ override_max is not none
         and ( expand(override_max) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
     alias: 'override switching to off'
     for:
       seconds: !input event_delay
-  - platform: template # windows closed (opened == 0)
-    id: "window_closed"
+  - id: "window_closed"
+    platform: template # windows closed (opened == 0)
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
@@ -421,38 +438,38 @@ trigger:
     for:
       #minutes: !input windowopened_delay # don't use on closing windows
       seconds: !input event_delay
-  - platform: template # windows opened > 0
-    id: "window_opened"
+  - id: "window_opened"
+    platform: template # windows opened > 0
     value_template: >
       {{ window is not none and
       ( expand(window) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
     alias: 'window opened'
     for:
       minutes: !input windowopened_delay
-  - platform: template # nobody home
-    id: "nobody_home"
+  - id: "nobody_home"
+    platform: template # nobody home
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
     alias: 'nobody home'
     for:
       minutes: !input nobodyhome_delay
-  - platform: template # somebody home
-    id: "somebody_home"
+  - id: "somebody_home"
+    platform: template # somebody home
     value_template: >
       {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
     alias: 'someone came home'
     for:
       #minutes: !input nobodyhome_delay # don't use on getting home
       seconds: !input event_delay
-  - platform: template # party mode switching to on
-    id: "party_start"
+  - id: "party_start"
+    platform: template # party mode switching to on
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 ) }}
     alias: 'party mode switching to on'
     for:
       seconds: !input event_delay
-  - platform: template # party mode switching to off
-    id: "party_end"
+  - id: "party_end"
+    platform: template # party mode switching to off
     value_template: >
       {{ party_mode is not none and ( expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | list | count == 0 ) }}
     alias: 'party mode switching to off'
@@ -461,45 +478,125 @@ trigger:
 
 mode: parallel # run in parallel
 max: 3 # no more than 3 running at once
-# maybe mode should be changed to queued to prevent missing changes
-#mode: restart # stop and restart on multiple calls
-#max_exceeded: silent
+max_exceeded: warning
 
 action:
-  - service: system_log.write
-    data:
-      message: >
-        Heating Control by march42
-        triggered with {{ trigger }}
-        valves {{ valves }}
-        scheduled {{ scheduled_preset }}, {{ scheduled_temp }}
-      level: info
-      logger: blueprints.march42.climate
 
-  - if: # temperature on TRV changed
-      - condition: trigger
-        id: 'TRV_temp_changed'
-    then: # temperature changed trigger
-      - if: # ignore valid changes
-          - condition: template
-            value_template: > # temp changed trigger
-              {{ is_temp_manual and manually_revert_delay > 0 }}
-        then:
-          - service: system_log.write
-            data:
-              message: >
-                revert from manually changed temperature,
-                changed to {{ trigger.to_state.attributes.temperature }} from {{ trigger.from_state.attributes.temperature }} 
-              level: warning
-              logger: blueprints.march42.climate
-        else:
-          - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
+  - choose: # take actions for specific events
+    - conditions: # home assistant shutting down
+        #- "{{ trigger is not none and trigger.id == 'homeassistant_shutdown' }}"
+        - condition: trigger
+          id: 'homeassistant_shutdown'
+      sequence:
+        - event: HEATING_SET_ECO
+          event_data:
+            reason: homeassistant_shutdown
+        - stop: "for now, nothing more to do; more will be triggered"
+    - conditions: # manually set ECO temp
+        - "{{ is_manual_event and manual_event == 'HEATING_SET_ECO' }}"
+      sequence:
+        - variables:
+            active_helpers: > # list of active helpers, to turn off
+              {% if override_max is not none and party_mode is not none %}
+                {{ expand(override_max,party_mode) | selectattr('state', 'in', ['on', 'active']) | map(attribute='entity_id') | unique | list }}
+              {% else %}
+                {% if override_max is not none %}
+                  {{ expand(override_max) | selectattr('state', 'in', ['on', 'active']) | map(attribute='entity_id') | unique | list }}
+                {% endif %}
+                {% if party_mode is not none %}
+                  {{ expand(party_mode) | selectattr('state', 'in', ['on', 'active']) | map(attribute='entity_id') | unique | list }}
+                {% endif %}
+              {% endif %}
+        - if:
+            - "{{ expand(active_helpers) | list | count > 0 }}"
+          then:
+            - if: # timer state==active
+                - "{{ expand(active_helpers) | selectattr('state', 'eq', 'active') | list | count > 0 }}"
+              then:
+                - service: timer.cancel
+                  data: {}
+                  target:
+                    entity_id: "{{ expand(active_helpers) | map(attribute='entity_id') | list }}"
+            - if: # binary,switch state=on
+                - "{{ expand(active_helpers) | selectattr('state', 'eq', 'on') | list | count > 0 }}"
+              then:
+                - service: homeassistant.turn_off
+                  data: {}
+                  target:
+                    entity_id: "{{ expand(active_helpers) | selectattr('state', 'eq', 'on') | map(attribute='entity_id') | list }}"
+            - delay: "00:00:05" # give 5 seconds, for scripts to be triggered
+            - wait_for_trigger: # wait for temperature setting to be changed
+              - platform: state
+                entity_id: !input valves
+                attribute: "temperature"
+                for: 2
+              timeout: "00:00:13.0"
+              continue_on_timeout: true
+        # just set temperature - but don't activate, if turned off
+        - if:
+            - "{{ is_winter }}"
+          then:
+            - service: climate.set_temperature
+              target:
+                entity_id: !input valves
+              data:
+                temperature: "{{ eco_temp }}"
+        - stop: "stopped helpers and set to eco_temp"
+    - conditions: # temperature on TRV changed
+        - condition: trigger
+          id: 'TRV_temp_changed'
+      sequence:
+        - if: # ignore valid changes
+            - condition: template
+              value_template: > # temp changed trigger
+                {{ is_temp_manual and manually_revert_delay > 0 }}
+          then:
+            - service: system_log.write
+              data:
+                message: >
+                  revert from manually changed temperature,
+                  changed to {{ trigger.to_state.attributes.temperature }} from {{ trigger.from_state.attributes.temperature }} 
+                level: warning
+                logger: blueprints.march42.climate
+          else:
+            - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
+    default:
+      - service: system_log.write
+        data:
+          message: >
+            Heating Control by march42
+            triggered with {{ trigger }}
+            valves {{ valves }}
+            scheduled {{ scheduled_preset }}, {{ scheduled_temp }}
+          level: info
+          logger: blueprints.march42.climate
 
-  # set TRVs
-  - if:
-      - condition: template
-        value_template: "{{ is_override_max }}"
-    then: # override/maintenance mode
+  # set TRVs to scheduled values
+  - choose:
+    - conditions: # override
+        - "{{ is_override_max }}"
+      sequence:
+        - service: climate.set_hvac_mode
+          target:
+            entity_id: !input valves
+          data:
+            hvac_mode: 'heat'
+        - delay:
+            seconds: !input action_delay
+        - service: climate.set_temperature
+          target:
+            entity_id: !input valves
+          data:
+            temperature: 99
+    - conditions: # summer or window opened
+        - "{{ is_summer or (windows_opened > 0) }}"
+      sequence:
+        - service: climate.set_hvac_mode
+          target:
+            entity_id: !input valves
+          data:
+            hvac_mode: 'off'
+    default: # scheduled condition
       - service: climate.set_hvac_mode
         target:
           entity_id: !input valves
@@ -507,51 +604,28 @@ action:
           hvac_mode: 'heat'
       - delay:
           seconds: !input action_delay
-      - service: climate.set_temperature
-        target:
-          entity_id: !input valves
-        data:
-          temperature: 99.0
-    else:
-      - if:
+      - variables:
+          current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
+      - if: # current temperature at least 3° lower
           - condition: template
-            value_template: "{{ is_summer or (windows_opened > 0) }}"
-        then: # summer_mode (winter_mode==off) or windows opened
-          - service: climate.set_hvac_mode
-            target:
-              entity_id: !input valves
-            data:
-              hvac_mode: 'off'
-        else: # scheduled heating
-          - service: climate.set_hvac_mode
-            target:
-              entity_id: !input valves
-            data:
-              hvac_mode: 'heat'
-          - delay:
-              seconds: !input action_delay
-          - variables:
-              current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
-          - if: # current temperature at least 3° lower
-              - condition: template
-                value_template: "{{ is_scheduler_start and (current_temp | float) + 3.0 <= (scheduled_temp | float) }}"
-            then: # boost heating, to warm up
-              - service: climate.set_temperature
-                target:
-                  entity_id: !input valves
-                data:
-                  temperature: "{{ (scheduled_temp | float) + 3.0 }}"
-              - wait_for_trigger:
-                  - platform: numeric_state
-                    entity_id: !input valves
-                    value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point }}"
-                    above: 1.0
-                timeout:
-                  minutes: 15
-                continue_on_timeout: true
-          # set desired heating set point
+            value_template: "{{ (is_scheduler_start or is_manual_event) and (current_temp | float) + 3.0 <= (scheduled_temp | float) }}"
+        then: # boost heating, to warm up
           - service: climate.set_temperature
             target:
               entity_id: !input valves
             data:
-              temperature: "{{ scheduled_temp | float }}"
+              temperature: "{{ (scheduled_temp | float) + 3.0 }}"
+          - wait_for_trigger:
+              - platform: numeric_state
+                entity_id: !input valves
+                value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point }}"
+                above: 1.0
+            timeout:
+              minutes: 15
+            continue_on_timeout: true
+      # set desired heating set point
+      - service: climate.set_temperature
+        target:
+          entity_id: !input valves
+        data:
+          temperature: "{{ scheduled_temp | float }}"
