@@ -3,7 +3,7 @@ blueprint:
   description: >
     **IKEA Styrbar Remote E2001/E2002 (for ZHA integration)**
 
-    **Version** 2.00-b18
+    **Version** 2.00-b19
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -77,11 +77,12 @@ blueprint:
         Additional switch(es) to control.
 
         These switches will be switched on and off when pressing ON and OFF.
+      default: none
       selector:
         target:
           entity:
             domain: switch
-      default: none
+            #filter: {'device_class': 'outlet'}
 
     hold_time:
       name: Hold Time
@@ -369,11 +370,19 @@ action:
       sequence:
         - delay: # wait for occuring double press
             seconds: "{{ press_time }}"
-        - if:
+        - if: # color, switch color_temp
+            - condition: template
+              value_template: "{{ is_state(controlling_master,'on') and state_attr(controlling_master, 'color_temp_kelvin') is none }}"
+          then:
+            - service: light.turn_on
+              target: !input "lights"
+              data:
+                color_temp_kelvin: 5000
+        - if: # off, switch on
             - condition: template
               value_template: "{{ is_state(controlling_master,'off') }}"
           then:
-            # switch light to color_temp
+            # switch on
             - service: light.turn_on
               target: !input "lights"
               data:
