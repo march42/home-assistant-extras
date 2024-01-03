@@ -2,10 +2,10 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.07-b74
+    **Version** 1.07-b75
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
-    Copyright (C) 2023 Marc Hefter
+    Copyright (C) 2023-2024 Marc Hefter
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -541,6 +541,12 @@ action:
                 entity_id: !input valves
               data:
                 temperature: "{{ eco_temp }}"
+          else:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: !input valves
+              data:
+                hvac_mode: "off"
         - stop: "stopped helpers and set to eco_temp"
     - conditions: # temperature on TRV changed
         - condition: trigger
