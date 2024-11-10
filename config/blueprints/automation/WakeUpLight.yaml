@@ -1,0 +1,169 @@
+blueprint:
+  name: Wake Up Light
+  description: >
+    **WakeUpLight**
+    **Version** 1.00-b5
+
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+
+    **Functions**
+
+    Gradually increase the lights, before the alarm goes off.
+
+
+    Copyright (C) 2023-2024 Marc Hefter
+
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/WakeUpLight.yaml
+  domain: automation
+
+  input:
+    alarm: # the alarm to check
+      name: Alarm
+      description: >
+        The timestamp (next_alarm entity) to trigger on.
+
+        Something like **sensor.<smartphone>_next_alarm** from the HomeAssistant smart phone APP.
+        The sensor **Next Alarm** must be enabled in the smart phone APP settings.
+      selector:
+        entity:
+          filter:
+            device_class: timestamp
+
+    persons: # only if user is home
+      name: (optional) Persons for presence detection
+      description: >
+        Persons to check present for activating the wake up light.
+
+        Should be **device_tracker.<smartphone>**, when using the Next Alarm sensor.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - person
+              - device_tracker
+              - input_boolean
+
+    lights: # the lights to use
+      name: Light(s)
+      description: >
+        The light(s) to use for the automation.
+
+        The first configured **light entity** will act as master for looping the colors.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    prealarm_time:
+      name:  Pre Alarm Time
+      description: Time (in minutes) before the alarm goes off, to start dimming up the lights.
+      default: -30
+      selector:
+        number:
+          min: -60
+          max: -1
+          step: 5
+          unit_of_measurement: minutes
+
+    stepping_count:
+      name:  Stepping Count
+      description: Number of steps on dimming up the light(s).
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 100
+          step: 5
+    stepping_time:
+      name:  Stepping Time
+      description: Time (in seconds) between the steps on dimming up the light(s).
+      default: 60
+      selector:
+        number:
+          min: 5
+          max: 120
+          step: 5
+          unit_of_measurement: seconds
+
+variables:
+  # get the settings to variables
+  alarm: !input alarm
+  persons: !input persons
+  persons_home: >
+    {% if persons is not none %}
+      {{ expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count }}
+    {% else %}
+      -1
+    {% endif %}
+  lights: !input lights
+  prealarm_time: !input prealarm_time
+  #prealarm_offset: "{{ prealarm_time | multiply(-1) | int }}"
+  stepping_count: !input stepping_count
+  stepping_time: !input stepping_time
+
+  is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
+  manual_event: >
+    {% if trigger is not none and trigger.id == 'manual_event' and trigger.event.event_type is not none %}
+      {{ trigger.event.event_type }}
+    {% else %}
+      none
+    {% endif %}
+
+trigger:
+  - id: "manual_event"
+    platform: event
+    event_type:
+      - "WAKE_UP_LIGHT"
+  - trigger: time
+    at:
+      entity_id: !input alarm
+      offset: !input prealarm_time
+
+mode: single
+#mode: parallel # run in parallel
+#max: 3 # no more than 3 running at once
+#max_exceeded: warning
+
+action:
+  - variables: # lighting handling
+      set_kelvin: 2000
+      step_kelvin: "{{ (5000 - set_kelvin) / stepping_count | float }}"
+      set_brightness: 1
+      step_brightness: "{{ 200 / stepping_count | float }}"
+  - repeat:
+      count: "{{ stepping_count }}"
+      sequence:
+        - variables:
+            off_kelvin: "{{ repeat.index | multiply(step_kelvin) | int }}"
+            off_brightness: "{{ repeat.index | multiply(step_brightness) | int }}"
+        - action: light.turn_on
+          metadata: {}
+          data:
+            kelvin: "{{ set_kelvin + off_kelvin }}"
+            brightness: "{{ set_brightness + off_brightness }}"
+          target:
+            entity_id:
+              - light.fensterleuchte_light
+        - delay: "{{ stepping_time }}"
+  - action: light.turn_on
+    metadata: {}
+    data:
+      kelvin: 5000
+      brightness: 200
