@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.07-b75
+    **Version** 1.07-b76
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023-2024 Marc Hefter
@@ -593,7 +593,7 @@ action:
           target:
             entity_id: !input valves
           data:
-            temperature: 99
+            temperature: 30
     - conditions: # summer or window opened
         - "{{ is_summer or (windows_opened > 0) }}"
       sequence:
