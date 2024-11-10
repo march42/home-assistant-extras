@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.00-b5
+    **Version** 1.00-b6
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -78,7 +78,7 @@ blueprint:
       selector:
         number:
           min: -60
-          max: -1
+          max: 0
           step: 5
           unit_of_measurement: minutes
 
@@ -113,8 +113,8 @@ variables:
       -1
     {% endif %}
   lights: !input lights
+  controlling_master: "{{ expand(lights.entity_id) | map(attribute='entity_id') | list | first }}" # first light
   prealarm_time: !input prealarm_time
-  #prealarm_offset: "{{ prealarm_time | multiply(-1) | int }}"
   stepping_count: !input stepping_count
   stepping_time: !input stepping_time
 
@@ -136,14 +136,17 @@ trigger:
       entity_id: !input alarm
       offset: !input prealarm_time
 
+conditions:
+  - condition: template
+    value_template: "{{ persons_home != 0 }}"
+  - condition: template
+    value_template: "{{ is_state(controlling_master,'off') }}"
+
 mode: single
-#mode: parallel # run in parallel
-#max: 3 # no more than 3 running at once
-#max_exceeded: warning
 
 action:
   - variables: # lighting handling
-      set_kelvin: 2000
+      set_kelvin: "{{ state_attr(controlling_master, 'min_color_temp_kelvin') | int }}"
       step_kelvin: "{{ (5000 - set_kelvin) / stepping_count | float }}"
       set_brightness: 1
       step_brightness: "{{ 200 / stepping_count | float }}"
@@ -158,12 +161,16 @@ action:
           data:
             kelvin: "{{ set_kelvin + off_kelvin }}"
             brightness: "{{ set_brightness + off_brightness }}"
-          target:
-            entity_id:
-              - light.fensterleuchte_light
+          target: !input lights
         - delay: "{{ stepping_time }}"
+        - if:
+            - condition: template
+              value_template: "{{ is_state(controlling_master,'off') }}"
+          then:
+            - stop: "Stopp, if light changes otherwise."
   - action: light.turn_on
     metadata: {}
     data:
       kelvin: 5000
       brightness: 200
+    target: !input lights
