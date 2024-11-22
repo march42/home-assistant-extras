@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.00-b6
+    **Version** 1.00-b7
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -102,6 +102,13 @@ blueprint:
           step: 5
           unit_of_measurement: seconds
 
+    action_start:
+      name: (Optional) Actions On Start
+      description: Additional action(s) to run, on starting.
+      selector:
+        action: {}
+      default: []
+
 variables:
   # get the settings to variables
   alarm: !input alarm
@@ -117,6 +124,7 @@ variables:
   prealarm_time: !input prealarm_time
   stepping_count: !input stepping_count
   stepping_time: !input stepping_time
+  action_start: !input action_start
 
   is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
   manual_event: >
@@ -150,6 +158,13 @@ action:
       step_kelvin: "{{ (5000 - set_kelvin) / stepping_count | float }}"
       set_brightness: 1
       step_brightness: "{{ 200 / stepping_count | float }}"
+  - conditions: # dummy
+      - "{{ has_value(action_start) }}"
+    sequence:
+      - alias: "Run the configured action"
+        choose: []
+        default: !input action_start
+
   - repeat:
       count: "{{ stepping_count }}"
       sequence:

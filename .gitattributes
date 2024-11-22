@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+#*.yaml text eol=crlf

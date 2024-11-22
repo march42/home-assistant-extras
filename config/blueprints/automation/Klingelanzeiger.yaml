@@ -1,0 +1,235 @@
+blueprint:
+  name: Klingelanzeiger
+  description: >
+    **Klingelanzeiger**
+    **Version** 2.00-b22
+
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+
+    **Functions**
+
+    Flashes the lights, on rung door-bell.
+
+
+    Copyright (C) 2023-24 Marc Hefter
+
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/Klingelanzeiger.yaml
+  domain: automation
+
+  input:
+    lights: # the lights to flash
+      name: Light(s)
+      description: >
+        The light(s) to flash, when bell is rung.
+
+        The first configured **light entity** will act as master for looping the colors.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    bell_1: # the bell entity_id
+      name: Bell 1
+      description: >
+        The bell to watch for.
+      selector:
+        entity:
+          filter:
+            - device_class:
+              - button
+              - switch
+          multiple: true
+
+variables:
+  input_lights: !input "lights"
+  controlling_master: > # triggering entity or first, if no trigger
+    {% if trigger is not none and trigger.id is not none %}
+      {{ trigger.entity_id }}
+    {% else %}
+      {{ expand(input_lights.entity_id) | map(attribute='entity_id') | list | first }}
+    {% endif %}
+
+  double_pressed: > # calculate last_triggered offset and check for double pressed
+    {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+    {% set seconds_last_triggered = as_timestamp(now()) - ts_last_triggered %}
+    {{ seconds_last_triggered <= 60 }}
+
+mode: restart
+max_exceeded: warning
+
+trigger:
+  - id: Haustür
+    platform: state
+    entity_id:
+      - light.door_bell
+    to: "on"
+  - id: Wohnungstür
+    platform: state
+    entity_id:
+      - light.door_bell_2
+    to: "on"
+  - id: RELAIS_STUCK_ERROR
+    platform: state
+    entity_id:
+      - light.door_bell
+      - light.door_bell_2
+    to: "on"
+    for:
+      hours: 0
+      minutes: 1
+      seconds: 0
+
+action:
+  - variables: # trigger data handling
+      endpoint_id: "{{ trigger.event.data.endpoint_id }}"
+      cluster_id: "{{ trigger.event.data.cluster_id }}"
+      command: "{{ trigger.event.data.command }}"
+      args: "{{ trigger.event.data.args }}"
+      params: "{{ trigger.event.data.params }}"
+
+
+alias: Klingelanzeiger
+description: ""
+condition:
+  - condition: or
+    conditions:
+      - condition: time
+        after: "08:00:00"
+        before: "20:00:00"
+        enabled: true
+      - condition: state
+        entity_id: light.signify_netherlands_b_v_lcl001_light
+        state: "on"
+      - condition: state
+        entity_id: light.regalbeleuchtung_light
+        state: "on"
+      - condition: state
+        entity_id: sun.sun
+        state: above_horizon
+      - condition: trigger
+        id:
+          - RELAIS_STUCK_ERROR
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: RELAIS_STUCK_ERROR
+        sequence:
+          - service: homeassistant.turn_off
+            data: {}
+            target:
+              entity_id: "{{ trigger.entity_id }}"
+    default:
+      - service: media_player.play_media
+        target:
+          entity_id: media_player.kitchen_radio
+        data:
+          media_content_id: ""
+          media_content_type: ""
+        metadata: {}
+        enabled: false
+      - service: light.turn_on
+        data:
+          color_name: "{{ bell_color }}"
+          flash: long
+        target:
+          entity_id: "{{ light_master }}"
+      - delay: "00:00:01"
+      - service: light.turn_on
+        data:
+          color_name: "{{ bell_color }}"
+        target:
+          entity_id: "{{ light_master }}"
+      - variables:
+          light_state: "{{ states('light.signify_netherlands_b_v_lcl001_light') }}"
+          color_mode: >-
+            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
+            'color_mode') }}
+          hs_color: >-
+            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
+            'hs_color') }}
+          color_temp_kelvin: >-
+            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
+            'color_temp_kelvin') }}
+      - wait_for_trigger:
+          - platform: state
+            entity_id:
+              - light.signify_netherlands_b_v_lcl001_light
+            to: "off"
+            for: 2
+          - platform: state
+            entity_id:
+              - light.signify_netherlands_b_v_lcl001_light
+            attribute: "color_mode"
+            for: 2
+          - platform: state
+            entity_id:
+              - light.signify_netherlands_b_v_lcl001_light
+            attribute: "brightness"
+            for: 2
+        timeout:
+          hours: 0
+          minutes: 0
+          seconds: 50
+          milliseconds: 0
+        continue_on_timeout: true
+      - if:
+          - "{{ wait.trigger is not none }}"
+        then:
+          - stop: light changed manually, while waiting
+      - if:
+          - condition: template
+            value_template: "{{ light_on }}"
+        then:
+          - if:
+              - condition: template
+                value_template: "{{ light_mode == 'color_temp' }}"
+            then:
+              - service: light.turn_on
+                target:
+                  entity_id: "{{ light_master }}"
+                data:
+                  color_temp_kelvin: "{{ light_temp }}"
+            else:
+              - service: light.turn_on
+                target:
+                  entity_id: "{{ light_master }}"
+                data:
+                  hs_color: "{{ light_color }}"
+        else:
+          - service: light.turn_off
+            target:
+              entity_id: "{{ light_master }}"
+variables:
+  light_master: light.signify_netherlands_b_v_lcl001_light
+  light_on: "{{ is_state(light_master,'on') }}"
+  light_mode: "{{ state_attr(light_master,'color_mode') | default('color_temp') }}"
+  light_temp: "{{ state_attr(light_master,'color_temp_kelvin') | default(4000) }}"
+  light_color: "{{ state_attr(light_master,'hs_color') | default([30,15]) }}"
+  bell_color: |
+    {% if trigger is not none and trigger.id == 'Haustür' %}
+      darkviolet
+    {% else %}
+      {% if trigger is not none and trigger.id == 'Wohnungstür' %}
+        darkgreen
+      {% else %}
+        darkgray
+      {% endif %}
+    {% endif %}
+mode: single
