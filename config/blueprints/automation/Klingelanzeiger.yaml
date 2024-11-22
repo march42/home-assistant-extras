@@ -45,16 +45,32 @@ blueprint:
             domain: light
 
     bell_1: # the bell entity_id
-      name: Bell 1
+      name: Wohnungstür
       description: >
         The bell to watch for.
       selector:
         entity:
           filter:
+            - domain:
+              - light
             - device_class:
               - button
               - switch
-          multiple: true
+          multiple: false
+
+    bell_2: # the bell entity_id
+      name: Haustür
+      description: >
+        The bell to watch for.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - light
+            - device_class:
+              - button
+              - switch
+          multiple: false
 
 variables:
   input_lights: !input "lights"
@@ -62,33 +78,49 @@ variables:
     {% if trigger is not none and trigger.id is not none %}
       {{ trigger.entity_id }}
     {% else %}
-      {{ expand(input_lights.entity_id) | map(attribute='entity_id') | list | first }}
+      {{ expand(input_lights.entity_id) | selectattr('attributes.hs_color','defined') | map(attribute='entity_id') | list | first }}
     {% endif %}
+  light_on: "{{ is_state(controlling_master,'on') }}"
+  light_mode: "{{ state_attr(controlling_master,'color_mode') | default('color_temp') }}"
+  light_temp: "{{ state_attr(controlling_master,'color_temp_kelvin') | default(4000) }}"
+  light_color: "{{ state_attr(controlling_master,'hs_color') | default([30,15]) }}"
 
   double_pressed: > # calculate last_triggered offset and check for double pressed
     {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
     {% set seconds_last_triggered = as_timestamp(now()) - ts_last_triggered %}
-    {{ seconds_last_triggered <= 60 }}
+    {{ seconds_last_triggered <= 30 }}
+
+  bell_1: !input bell_1
+  bell_2: !input bell_2
+  bell_color: |
+    {% if trigger is not none and trigger.id == 'Wohnungstür' %}
+      darkgreen
+    {% else %}
+      {% if trigger is not none and trigger.id == 'Haustür' %}
+        darkviolet
+      {% else %}
+        darkgray
+      {% endif %}
+    {% endif %}
 
 mode: restart
+max: 3
 max_exceeded: warning
 
 trigger:
-  - id: Haustür
-    platform: state
-    entity_id:
-      - light.door_bell
-    to: "on"
   - id: Wohnungstür
     platform: state
-    entity_id:
-      - light.door_bell_2
+    entity_id: !input bell_1
+    to: "on"
+  - id: Haustür
+    platform: state
+    entity_id: !input bell_2
     to: "on"
   - id: RELAIS_STUCK_ERROR
     platform: state
     entity_id:
-      - light.door_bell
-      - light.door_bell_2
+      - !input bell_1
+      - !input bell_2
     to: "on"
     for:
       hours: 0
@@ -103,30 +135,8 @@ action:
       args: "{{ trigger.event.data.args }}"
       params: "{{ trigger.event.data.params }}"
 
+  - choose: # take actions for specific events
 
-alias: Klingelanzeiger
-description: ""
-condition:
-  - condition: or
-    conditions:
-      - condition: time
-        after: "08:00:00"
-        before: "20:00:00"
-        enabled: true
-      - condition: state
-        entity_id: light.signify_netherlands_b_v_lcl001_light
-        state: "on"
-      - condition: state
-        entity_id: light.regalbeleuchtung_light
-        state: "on"
-      - condition: state
-        entity_id: sun.sun
-        state: above_horizon
-      - condition: trigger
-        id:
-          - RELAIS_STUCK_ERROR
-action:
-  - choose:
       - conditions:
           - condition: trigger
             id: RELAIS_STUCK_ERROR
@@ -135,101 +145,58 @@ action:
             data: {}
             target:
               entity_id: "{{ trigger.entity_id }}"
+
+      - conditions: # only while lights on or daylight
+          - condition: time
+            after: "08:00:00"
+            before: "22:00:00"
+            enabled: true
+          - condition: state
+            entity_id: sun.sun
+            state: above_horizon
+          - condition: state
+            entity_id: !input "lights"
+            state: "on"
+        sequence:
+          - service: light.turn_on
+            data:
+              color_name: "{{ bell_color }}"
+              flash: long
+            target:
+              entity_id: !input "lights"
+          - delay: "00:00:01"
+          - service: light.turn_on
+            data:
+              color_name: "{{ bell_color }}"
+            target:
+              entity_id: !input "lights"
+
     default:
-      - service: media_player.play_media
-        target:
-          entity_id: media_player.kitchen_radio
-        data:
-          media_content_id: ""
-          media_content_type: ""
-        metadata: {}
-        enabled: false
-      - service: light.turn_on
-        data:
-          color_name: "{{ bell_color }}"
-          flash: long
-        target:
-          entity_id: "{{ light_master }}"
-      - delay: "00:00:01"
-      - service: light.turn_on
-        data:
-          color_name: "{{ bell_color }}"
-        target:
-          entity_id: "{{ light_master }}"
-      - variables:
-          light_state: "{{ states('light.signify_netherlands_b_v_lcl001_light') }}"
-          color_mode: >-
-            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
-            'color_mode') }}
-          hs_color: >-
-            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
-            'hs_color') }}
-          color_temp_kelvin: >-
-            {{ state_attr('light.signify_netherlands_b_v_lcl001_light',
-            'color_temp_kelvin') }}
-      - wait_for_trigger:
-          - platform: state
-            entity_id:
-              - light.signify_netherlands_b_v_lcl001_light
-            to: "off"
-            for: 2
-          - platform: state
-            entity_id:
-              - light.signify_netherlands_b_v_lcl001_light
-            attribute: "color_mode"
-            for: 2
-          - platform: state
-            entity_id:
-              - light.signify_netherlands_b_v_lcl001_light
-            attribute: "brightness"
-            for: 2
-        timeout:
-          hours: 0
-          minutes: 0
-          seconds: 50
-          milliseconds: 0
-        continue_on_timeout: true
-      - if:
-          - "{{ wait.trigger is not none }}"
-        then:
-          - stop: light changed manually, while waiting
+#      - conditions:
+#          - condition: trigger
+#            id: Wohnungstür
+#            id: Haustür
+
+  - if: # restore previous lighting
+      - condition: template
+        value_template: "{{ light_on }}"
+    then:
       - if:
           - condition: template
-            value_template: "{{ light_on }}"
+            value_template: "{{ light_mode == 'color_temp' }}"
         then:
-          - if:
-              - condition: template
-                value_template: "{{ light_mode == 'color_temp' }}"
-            then:
-              - service: light.turn_on
-                target:
-                  entity_id: "{{ light_master }}"
-                data:
-                  color_temp_kelvin: "{{ light_temp }}"
-            else:
-              - service: light.turn_on
-                target:
-                  entity_id: "{{ light_master }}"
-                data:
-                  hs_color: "{{ light_color }}"
-        else:
-          - service: light.turn_off
+          - service: light.turn_on
             target:
               entity_id: "{{ light_master }}"
-variables:
-  light_master: light.signify_netherlands_b_v_lcl001_light
-  light_on: "{{ is_state(light_master,'on') }}"
-  light_mode: "{{ state_attr(light_master,'color_mode') | default('color_temp') }}"
-  light_temp: "{{ state_attr(light_master,'color_temp_kelvin') | default(4000) }}"
-  light_color: "{{ state_attr(light_master,'hs_color') | default([30,15]) }}"
-  bell_color: |
-    {% if trigger is not none and trigger.id == 'Haustür' %}
-      darkviolet
-    {% else %}
-      {% if trigger is not none and trigger.id == 'Wohnungstür' %}
-        darkgreen
-      {% else %}
-        darkgray
-      {% endif %}
-    {% endif %}
-mode: single
+            data:
+              color_temp_kelvin: "{{ light_temp }}"
+        else:
+          - service: light.turn_on
+            target:
+              entity_id: "{{ light_master }}"
+            data:
+              hs_color: "{{ light_color }}"
+    else:
+      - service: light.turn_off
+        target:
+          entity_id: "{{ light_master }}"
