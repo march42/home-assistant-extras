@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.00-b7
+    **Version** 1.00-b8
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -42,8 +42,20 @@ blueprint:
         The sensor **Next Alarm** must be enabled in the smart phone APP settings.
       selector:
         entity:
+          #multiple: true # multiple wont work without further changes, maybe trigger template
           filter:
             device_class: timestamp
+
+    prealarm_time:
+      name:  Pre Alarm Time
+      description: Time (in minutes) before the alarm goes off, to start dimming up the lights.
+      default: -30
+      selector:
+        number:
+          min: -60
+          max: 0
+          step: 5
+          unit_of_measurement: minutes
 
     persons: # only if user is home
       name: (optional) Persons for presence detection
@@ -54,6 +66,7 @@ blueprint:
       default:
       selector:
         entity:
+          multiple: true
           filter:
             - domain:
               - person
@@ -67,20 +80,29 @@ blueprint:
 
         The first configured **light entity** will act as master for looping the colors.
       selector:
-        target:
-          entity:
+        entity:
+          multiple: true
+          filter:
             domain: light
 
-    prealarm_time:
-      name:  Pre Alarm Time
-      description: Time (in minutes) before the alarm goes off, to start dimming up the lights.
-      default: -30
+    target_brightness:
+      name: Target Brightness
+      description: The lamp will be dimming up to this brightness level.
+      default: 128
       selector:
         number:
-          min: -60
-          max: 0
-          step: 5
-          unit_of_measurement: minutes
+          min: 1
+          max: 255
+          step: 1
+    target_kelvin:
+      name: Target Light Temperature
+      description: The lamp will be stepping up to this temperature level.
+      default: 5000
+      selector:
+        number:
+          min: 2000
+          max: 6500
+          step: 100
 
     stepping_count:
       name:  Stepping Count
@@ -111,7 +133,6 @@ blueprint:
 
 variables:
   # get the settings to variables
-  alarm: !input alarm
   persons: !input persons
   persons_home: >
     {% if persons is not none %}
@@ -120,8 +141,15 @@ variables:
       -1
     {% endif %}
   lights: !input lights
-  controlling_master: "{{ expand(lights.entity_id) | map(attribute='entity_id') | list | first }}" # first light
-  prealarm_time: !input prealarm_time
+  # supported_color_modes my be onoff, brightness, color_temp, xy, hs
+  #lights_dim: "{{ expand(lights) }}"
+  #lights_cct: "{{ expand(lights) }}"
+  #lights_rgb: "{{ expand(lights) }}"
+  #lights_cct: "{{ expand(lights) | selectattr('supported_color_modes', 'search', 'color_temp') }}"
+  #lights_rgb: "{{ expand(lights) | selectattr('supported_color_modes', 'search', 'xy') | map(attribute='entity_id') | list }}"
+  controlling_master: "{{ lights | list | first }}" # first light
+  target_brightness: !input target_brightness
+  target_kelvin: !input target_kelvin
   stepping_count: !input stepping_count
   stepping_time: !input stepping_time
   action_start: !input action_start
@@ -134,36 +162,58 @@ variables:
       none
     {% endif %}
 
+trigger_variables:
+  alarm: !input alarm
+  prealarm_time: !input prealarm_time
+
 trigger:
+#  - id: "pre_alarm_time"
+#    trigger: time
+#    at:
+#      entity_id: !input alarm
+#      offset: !input prealarm_time
+#  - id: "alarm_time"
+#    trigger: time
+#    at:
+#      entity_id: !input alarm
   - id: "manual_event"
     platform: event
     event_type:
       - "WAKE_UP_LIGHT"
-  - trigger: time
-    at:
-      entity_id: !input alarm
-      offset: !input prealarm_time
+  - id: "before_datetime"
+    platform: template
+    value_template: |-
+      {% set alarm_dt = states(alarm) | as_datetime | as_local %}
+      {% set alarm_off = timedelta(minutes = prealarm_time|default(0)) %}
+      {{ (now() > alarm_dt + alarm_off) }}
 
-conditions:
-  - condition: template
-    value_template: "{{ persons_home != 0 }}"
-  - condition: template
-    value_template: "{{ is_state(controlling_master,'off') }}"
+#conditions:
+#  - condition: template
+#    value_template: "{{ is_state(controlling_master,'off') }}"
 
 mode: single
 
 action:
+  - choose:
+    - conditions:
+        - "{{ persons_home == 0 }}"
+      sequence:
+        - stop: "STOPP, if not at home."
+    - conditions:
+        - "{{ is_state(controlling_master,'on') }}"
+      sequence:
+        - stop: "STOPP, if light is already on."
+    - conditions: # dummy
+        - "{{ action_start is not none }}"
+      sequence:
+        - alias: "Run the configured start action"
+          choose: []
+          default: !input action_start
   - variables: # lighting handling
-      set_kelvin: "{{ state_attr(controlling_master, 'min_color_temp_kelvin') | int }}"
-      step_kelvin: "{{ (5000 - set_kelvin) / stepping_count | float }}"
+      set_kelvin: "{{ state_attr(controlling_master, 'min_color_temp_kelvin') | default(2000) | int }}"
+      step_kelvin: "{{ (target_kelvin - set_kelvin) / stepping_count | float }}"
       set_brightness: 1
-      step_brightness: "{{ 200 / stepping_count | float }}"
-  - conditions: # dummy
-      - "{{ has_value(action_start) }}"
-    sequence:
-      - alias: "Run the configured action"
-        choose: []
-        default: !input action_start
+      step_brightness: "{{ target_brightness / stepping_count | float }}"
 
   - repeat:
       count: "{{ stepping_count }}"
@@ -176,16 +226,27 @@ action:
           data:
             kelvin: "{{ set_kelvin + off_kelvin }}"
             brightness: "{{ set_brightness + off_brightness }}"
-          target: !input lights
-        - delay: "{{ stepping_time }}"
+          entity_id: !input lights
+#        - delay: "{{ stepping_time }}"
+        - alias: "Wait, if light is changed manually"
+          wait_for_trigger:
+            - id: 'lights_changed'
+              trigger: state
+              entity_id: !input lights
+            - id: 'alarm_changed'
+              trigger: state
+              entity_id: !input alarm
+          timeout: "{{ stepping_time }}"
+          continue_on_timeout: true
         - if:
-            - condition: template
-              value_template: "{{ is_state(controlling_master,'off') }}"
+            - "{{ wait.trigger is not none }}"
+            #- "{{ wait.trigger is not none and wait.trigger.id == 'lights_changed' }}"
+            #- "{{ wait.trigger is not none and wait.trigger.id == 'alarm_changed' }}"
           then:
-            - stop: "Stopp, if light changes otherwise."
+            - stop: "STOPP, if light or alarm being changed otherwise."
   - action: light.turn_on
     metadata: {}
     data:
-      kelvin: 5000
-      brightness: 200
-    target: !input lights
+      kelvin: "{{ target_kelvin }}"
+      brightness: "{{ target_brightness }}"
+    entity_id: !input lights
