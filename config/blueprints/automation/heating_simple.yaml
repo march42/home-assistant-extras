@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.07-b76
+    **Version** 1.07-b77
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023-2024 Marc Hefter
@@ -612,22 +612,27 @@ action:
           seconds: !input action_delay
       - variables:
           current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
-      - if: # current temperature at least 3° lower
+          low_point: "{{ scheduled_temp - 2.0 }}"
+          high_point: "{{ scheduled_temp + 5.0 }}"
+      - if: # current temperature is low
           - condition: template
-            value_template: "{{ (is_scheduler_start or is_manual_event) and (current_temp | float) + 3.0 <= (scheduled_temp | float) }}"
+            value_template: "{{ (is_scheduler_start or is_manual_event) and (current_temp <= low_point) }}"
         then: # boost heating, to warm up
           - service: climate.set_temperature
             target:
               entity_id: !input valves
             data:
-              temperature: "{{ (scheduled_temp | float) + 3.0 }}"
+              temperature: "{{ high_point | float }}"
           - wait_for_trigger:
               - platform: numeric_state
                 entity_id: !input valves
-                value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point }}"
+                #value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point }}"
+                value_template: "{{ state.attributes.current_temperature - state.attributes.temperature_set_point - scheduled_temp }}"
                 above: 1.0
+                for:
+                  seconds: 90
             timeout:
-              minutes: 15
+              minutes: 20
             continue_on_timeout: true
       # set desired heating set point
       - service: climate.set_temperature
