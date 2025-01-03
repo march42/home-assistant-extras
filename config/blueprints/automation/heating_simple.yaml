@@ -2,7 +2,7 @@ blueprint:
   name: Heating Simple
   description: |
     **simplified heating control**
-    **Version** 1.07-b77
+    **Version** 1.07-b78
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023-2024 Marc Hefter
@@ -611,7 +611,7 @@ action:
       - delay:
           seconds: !input action_delay
       - variables:
-          current_temp: "{{ state_attr(valves_master,'current_temperature') | float }}"
+          current_temp: "{{ state_attr(valves_master,'current_temperature') | default(scheduled_temp) | float }}"
           low_point: "{{ scheduled_temp - 2.0 }}"
           high_point: "{{ scheduled_temp + 5.0 }}"
       - if: # current temperature is low
