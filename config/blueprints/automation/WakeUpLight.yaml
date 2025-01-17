@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.00-b8
+    **Version** 1.00-b9
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -183,9 +183,14 @@ trigger:
   - id: "before_datetime"
     platform: template
     value_template: |-
-      {% set alarm_dt = states(alarm) | as_datetime | as_local %}
-      {% set alarm_off = timedelta(minutes = prealarm_time|default(0)) %}
-      {{ (now() > alarm_dt + alarm_off) }}
+      {% if has_value(alarm) -%}
+        {% set alarm_dt = states(alarm) | as_datetime | as_local %}
+        {% set alarm_off = timedelta(minutes = prealarm_time|default(0)) %}
+        {{ (now() > alarm_dt + alarm_off) }}
+      {%- else -%}
+        {{ false }}
+      {%- endif %}
+
 
 #conditions:
 #  - condition: template
