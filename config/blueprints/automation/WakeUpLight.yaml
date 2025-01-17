@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.00-b9
+    **Version** 1.01-b10
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -130,6 +130,12 @@ blueprint:
       selector:
         action: {}
       default: []
+    action_finish:
+      name: (Optional) Actions When Finished
+      description: Additional action(s) to run, when finished.
+      selector:
+        action: {}
+      default: []
 
 variables:
   # get the settings to variables
@@ -153,6 +159,7 @@ variables:
   stepping_count: !input stepping_count
   stepping_time: !input stepping_time
   action_start: !input action_start
+  action_finish: !input action_finish
 
   is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
   manual_event: >
@@ -177,10 +184,12 @@ trigger:
 #    at:
 #      entity_id: !input alarm
   - id: "manual_event"
+    alias: "manual WAKE_UP_LIGHT event"
     platform: event
     event_type:
       - "WAKE_UP_LIGHT"
   - id: "before_datetime"
+    alias: "minutes before ALARM"
     platform: template
     value_template: |-
       {% if has_value(alarm) -%}
@@ -249,9 +258,18 @@ action:
             #- "{{ wait.trigger is not none and wait.trigger.id == 'alarm_changed' }}"
           then:
             - stop: "STOPP, if light or alarm being changed otherwise."
+
   - action: light.turn_on
     metadata: {}
     data:
       kelvin: "{{ target_kelvin }}"
       brightness: "{{ target_brightness }}"
     entity_id: !input lights
+
+  - choose:
+    - conditions: # dummy
+        - "{{ action_finish is not none }}"
+      sequence:
+        - alias: "Run the configured finished action"
+          choose: []
+          default: !input action_finish
