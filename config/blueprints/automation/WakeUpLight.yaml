@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.01-b10
+    **Version** 1.02-b11
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -11,8 +11,11 @@ blueprint:
 
     Gradually increase the lights, before the alarm goes off.
 
+    Check for persons at home, to prevent actions when out.
+    Check for low illumination, to prevent lights when nobody needs it.
 
-    Copyright (C) 2023-2024 Marc Hefter
+
+    Copyright (C) 2023-2025 Marc Hefter
 
 
     This program is free software: you can redistribute it and/or modify
@@ -104,6 +107,18 @@ blueprint:
           max: 6500
           step: 100
 
+    luxmeter: # the illumination sensors to check
+      name: (optional) Luxmeter(s)
+      description: >
+        The luxmeter(s) to use for the automation.
+      default:
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: sensor
+            device_class: illuminance
+
     stepping_count:
       name:  Stepping Count
       description: Number of steps on dimming up the light(s).
@@ -153,9 +168,18 @@ variables:
   #lights_rgb: "{{ expand(lights) }}"
   #lights_cct: "{{ expand(lights) | selectattr('supported_color_modes', 'search', 'color_temp') }}"
   #lights_rgb: "{{ expand(lights) | selectattr('supported_color_modes', 'search', 'xy') | map(attribute='entity_id') | list }}"
+  # {{ state_attr('light.dining_room', 'effect_list') | contains('rainbow') }}
   controlling_master: "{{ lights | list | first }}" # first light
   target_brightness: !input target_brightness
   target_kelvin: !input target_kelvin
+  luxmeter: !input luxmeter
+  # 'state' attribute is string, so max filter will sort on string basis
+  luxmeter_value: >
+    {% if luxmeter is not none %}
+      {{ expand(luxmeter) | rejectattr('state', 'in', ['unavailable','undefined','unknown']) | map(attribute='state') | max }}
+    {% else %}
+      -1
+    {% endif %}
   stepping_count: !input stepping_count
   stepping_time: !input stepping_time
   action_start: !input action_start
@@ -217,6 +241,10 @@ action:
         - "{{ is_state(controlling_master,'on') }}"
       sequence:
         - stop: "STOPP, if light is already on."
+    - conditions:
+        - "{{ luxmeter_value > 250 }}"
+      sequence:
+        - stop: "STOPP, if illumination sufficient."
     - conditions: # dummy
         - "{{ action_start is not none }}"
       sequence:
