@@ -2,7 +2,7 @@ blueprint:
   name: Wake Up Light
   description: >
     **WakeUpLight**
-    **Version** 1.02-b11
+    **Version** 1.02-b12
 
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
@@ -266,7 +266,7 @@ action:
         - action: light.turn_on
           metadata: {}
           data:
-            kelvin: "{{ set_kelvin + off_kelvin }}"
+            color_temp_kelvin: "{{ set_kelvin + off_kelvin }}"
             brightness: "{{ set_brightness + off_brightness }}"
           entity_id: !input lights
 #        - delay: "{{ stepping_time }}"
@@ -290,7 +290,7 @@ action:
   - action: light.turn_on
     metadata: {}
     data:
-      kelvin: "{{ target_kelvin }}"
+      color_temp_kelvin: "{{ target_kelvin }}"
       brightness: "{{ target_brightness }}"
     entity_id: !input lights
 
