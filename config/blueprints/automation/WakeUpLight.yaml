@@ -15,7 +15,7 @@ blueprint:
     Check for low illumination, to prevent lights when nobody needs it.
 
 
-    Copyright (C) 2023-2025 Marc Hefter
+    Copyright (C) 2023-2026 Marc Hefter
 
 
     This program is free software: you can redistribute it and/or modify
@@ -264,6 +264,7 @@ action:
             off_kelvin: "{{ repeat.index | multiply(step_kelvin) | int }}"
             off_brightness: "{{ repeat.index | multiply(step_brightness) | int }}"
         - action: light.turn_on
+          continue_on_error: true
           metadata: {}
           data:
             color_temp_kelvin: "{{ set_kelvin + off_kelvin }}"
@@ -288,6 +289,7 @@ action:
             - stop: "STOPP, if light or alarm being changed otherwise."
 
   - action: light.turn_on
+    continue_on_error: true
     metadata: {}
     data:
       color_temp_kelvin: "{{ target_kelvin }}"
