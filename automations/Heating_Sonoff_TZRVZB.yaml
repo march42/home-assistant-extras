@@ -1,0 +1,52 @@
+alias: Remote Temperature WoZi HKR
+description: |
+  This is the automation script for my living room TRVZB. Proof of concept and work in progress.
+  Sonchronize temperature from remote sensor to TRVZB radiator valve.
+
+  The source sensor entity sensor.wozi_temperature is a helper, combining multiple temperature sensors with arithmetic mean.
+  The condition checking switch.wohnzimmer_hkr_switch and switch.wohnzimmer_hkr_external_temperature_sensor are on saves battery life, only sending change if meaningful.
+  The condition checking time since last change can be used to throttle changes for saving battery life. I have it disabled.
+  The variable source_entity takes the triggering sensor, if more than one are chosen.
+  The variable external_temperature converts the sensor value to °C if it's °F or Kelvin.
+  The TRVZB entity number.wohnzimmer_hkr_external_temperature_sensor_value is set to the temperature in °C.
+triggers:
+  - id: External_Sensor_Changed
+    trigger: temperature.changed
+    target:
+      entity_id: sensor.wozi_temperature
+    options:
+      threshold:
+        type: any
+conditions:
+  - condition: template
+    value_template: >
+      {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+      {% set seconds_since_ts = as_timestamp(now()) - ts_last_triggered %}
+      {{ seconds_since_ts >= 60 }}
+    enabled: false
+  - condition: switch.is_on
+    target:
+      entity_id:
+        - switch.wohnzimmer_hkr_switch
+        - switch.wohnzimmer_hkr_external_temperature_sensor
+    options:
+      behavior: all
+      for: '00:00:00'
+actions:
+  - variables:
+      source_entity: '{{ trigger.entity_id }}'
+      external_temperature: >
+        {% set temperature = states(source_entity) | float %}
+        {% set unit = state_attr(source_entity, 'unit_of_measurement') %}
+        {{ ((temperature - 32) * 5 / 9 if unit == '°F'
+             else temperature - 273.15 if unit == 'K'
+             else temperature) | round(1) }}
+  - action: number.set_value
+    metadata: {}
+    target:
+      entity_id: number.wohnzimmer_hkr_external_temperature_sensor_value
+    data:
+      value: '{{ external_temperature }}'
+mode: restart
+trace:
+  stored_traces: 20
