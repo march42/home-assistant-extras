@@ -164,6 +164,7 @@ WWAH_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC57
 
 - sets target temperature to 12°C, if temperature drop of >1.5°C in <4.5 minutes
 - reverts back to normal after 30 minutes or after manually changing temperature
+- shows **OP** in display, while open window detected
 
 ##### Anti Calcification
 
