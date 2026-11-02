@@ -17,3 +17,8 @@ To ensure correct OTA updates we need unique firmware identification.
 manufacturer 0x117c IKEA
 Manufacturer 0x1217 Amazon Lab126 Specififc Cluster 0xfc57
 Manufacturer 0x1286 Sonoff eWeLink Specific Cluster 0xfc11
+
+Philips Hue white and color ambiance LightStrip plus
+Manufacturer 0x100b Philips
+Image Type 0x0119 Manufacturer Specific
+File Version 0x02005501
