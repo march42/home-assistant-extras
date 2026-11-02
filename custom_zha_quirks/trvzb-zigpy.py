@@ -48,9 +48,6 @@ SONOFF_CLOSING_LIMIT_VOLTAGE_ATTR_ID = 0x6006
 
 # Valve Motor Running Voltage, Attribute ID 0x6007, int16
 SONOFF_VALVE_RUNNING_VOLTAGE_ATTR_ID = 0x6007
-# 1336=???  reported after starting Boost mode
-# 1149=???  reported after starting boost
-# 1334=???  reported after stopping boost
 
 # ???, Attribute ID 0x6008, uint8
 SONOFF_SCHEDULER_UNKNOWN_ATTR_ID = 0x6008

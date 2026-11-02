@@ -45,6 +45,14 @@ trigger.entity_id: sensor.aussentemperatur_dew_point
 trigger.entity_id: sensor.wohnzimmer_klima_anzeige_temperature
 ```
 
+Using variables, the triggering entity and correspondong device can be determined.
+
+```yaml
+variables:
+  source_entity: '{{ trigger.entity_id }}'
+  source_device: '{{ device_id(source_entity) }}'
+```
+
 ### trigger state
 
 ```yaml

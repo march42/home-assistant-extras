@@ -52,7 +52,6 @@
 SONOFF_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC11
 WWAH_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC57
 
-- ordered as appearing in eWeLink APP
 - i named the constants, because i find it easier to read and change later
 
 | Cluster | Attribute | Name | Notes |
@@ -75,29 +74,24 @@ WWAH_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC57
 | 0xFC11 | - | SONOFF_MANUFACTURER_SPECIFIC_CLUSTER_ID | SONOFF_MANUFACTURER_CODE 0x1217 |
 | 0xFC11 | 0x6013 | SONOFF_ADAPTIVE_MODE_ATTR_ID | enum8 0x00=Inactive (temperature accuracy configurable), 0x02=Active (Valve opening based on target temperature and temperature changes) |
 | 0xFC11 | 0x0000 | SONOFF_CHILD_LOCK_ATTR_ID | 0x00=False (TRV can be operated), 0x01=True (TRV operation blocked) |
-| 0xFC11 | 0x6000 | SONOFF_OPEN_WINDOW_DETECTION_ATTR_ID | 0x00=False, 0x01=True (temperature drop of >1.5°C in <4.5 minutes, target temperature 12°C) |
-| 0xFC11 | 0x6014 | SONOFF_TEMPORARY_ACTIVATION_MODE_ATTR_ID | 0x00=Boost (set 0x6015 activation time first), 0x01=Scheduled (set 0x6015 activation time and 0x6016 temperature first) |
-| 0xFC11 | 0x6015 | SONOFF_TEMPORARY_ACTIVATION_TIME_ATTR_ID | in seconds (900=15 minutes) |
-| 0xFC11 | 0x6016 | SONOFF_TEMPORARY_TARGET_TEMPERATURE_ATTR_ID | in 1/100th degree celsius (500=5.0°C) |
-| 0xFC11 | 0x6007 | ??? Attribute | int16 1336=??? reported starting boost, 1149=??? reported starting boost, 1334=??? reported stopping boost |
-| 0xFC11 | 0x6008 | ??? Attribute | uint8 0x7f=127=???  reported after saving scheduler |
-| 0xFC11 | 0x6009 | Regular Heating Setpoint Attribute | int16 in 1/100th degree celsius 1500=15.0°C |
-| 0xFC11 | 0x6002 | SONOFF_ANTI_FREEZE_TEMPERATURE_ATTR_ID | in 1/100th degree celsius (700=7.0°C) |
-| 0xFC11 | 0x600B | SONOFF_VALVE_OPENING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
-| 0xFC11 | 0x600C | SONOFF_VALVE_CLOSING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
-| 0xFC11 | 0x6011 | SONOFF_TEMPERATURE_ACCURACY_ADJUST_ATTR_ID | doesn't want to write with firmware 1.4.4, not allowed if Adaptive Mode is activated (?=-1.0°C, ?=-0.8°C, ?=-0.6°C, ?=-0.4°C, ?=-0.2°C) |
 | 0xFC11 | 0x0021 | SONOFF_DISPLAY_ORIENTATION_ATTR_ID | uint8 0x00=0°, 0x02=180° |
+| 0xFC11 | 0x6000 | SONOFF_OPEN_WINDOW_DETECTION_ATTR_ID | 0x00=False, 0x01=True (temperature drop of >1.5°C in <4.5 minutes, target temperature 12°C) |
+| 0xFC11 | 0x6002 | SONOFF_ANTI_FREEZE_TEMPERATURE_ATTR_ID | in 1/100th degree celsius (700=7.0°C) |
 | 0xFC11 | 0x6003 | SONOFF_IDLE_STEPS_ATTR_ID | uint16 |
 | 0xFC11 | 0x6004 | SONOFF_CLOSING_STEPS_ATTR_ID | uint16 |
 | 0xFC11 | 0x6005 | SONOFF_OPENING_LIMIT_VOLTAGE_ATTR_ID | uint16 |
 | 0xFC11 | 0x6006 | SONOFF_CLOSING_LIMIT_VOLTAGE_ATTR_ID | uint16 |
 | 0xFC11 | 0x6007 | SONOFF_VALVE_RUNNING_VOLTAGE_ATTR_ID | int16 |
 | 0xFC11 | 0x6008 | ??? Attribute | uint8, reported 0x7f=127 after saving scheduler |
+| 0xFC11 | 0x6009 | Regular Heating Setpoint Attribute | int16 in 1/100th degree celsius 1500=15.0°C |
+| 0xFC11 | 0x600B | SONOFF_VALVE_OPENING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
+| 0xFC11 | 0x600C | SONOFF_VALVE_CLOSING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
 | 0xFC11 | 0x600D | SONOFF_EXTERNAL_TEMP_SENSOR_VALUE_ATTR_ID | int16, in 1/100th degree celsius |
 | 0xFC11 | 0x600E | SONOFF_EXTERNAL_TEMP_SENSOR_ENABLE_ATTR_ID | uint8, 0x00=disabled, 0x01=enabled |
-| 0xFC11 | 0x60 |  | int16 |
-| 0xFC11 | 0x60 |  | int16 |
-| 0xFC11 | 0x60 |  | int16 |
+| 0xFC11 | 0x6011 | SONOFF_TEMPERATURE_ACCURACY_ADJUST_ATTR_ID | doesn't want to write with firmware 1.4.4, not allowed if Adaptive Mode is activated (?=-1.0°C, ?=-0.8°C, ?=-0.6°C, ?=-0.4°C, ?=-0.2°C) |
+| 0xFC11 | 0x6014 | SONOFF_TEMPORARY_ACTIVATION_MODE_ATTR_ID | 0x00=Boost (set 0x6015 activation time first), 0x01=Scheduled (set 0x6015 activation time and 0x6016 temperature first) |
+| 0xFC11 | 0x6015 | SONOFF_TEMPORARY_ACTIVATION_TIME_ATTR_ID | in seconds (900=15 minutes) |
+| 0xFC11 | 0x6016 | SONOFF_TEMPORARY_TARGET_TEMPERATURE_ATTR_ID | in 1/100th degree celsius (500=5.0°C) |
 | 0xFC57 | - | WWAH (Works With All Hubs) | WWAH_MANUFACTURER_CODE 0x1217 Amazon Lab126 |
 
 #### Factory Reset
