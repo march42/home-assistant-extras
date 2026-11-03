@@ -1,0 +1,157 @@
+blueprint:
+  name: SONOFF TRVZB Heating
+  description: |
+    **heating control for SONOFF TRVZB**
+    **Version** 0.00-b03
+    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+
+    Copyright (C) 2023-2026 Marc Hefter
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/SONOFF_TRVZB_heating.yaml
+  domain: automation
+
+  input:
+    trv: # choosen Sonoff TRVZB
+      name: TRVZB trv
+      description: Thermostats (thermostatic regulated valve) to be controlled with this settings
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: zha # MQTT/z2m uses differend entity naming
+              manufacturer: SONOFF
+              model: TRVZB
+
+    temperature_source: # some thermometer reporting to Home Assistant
+      name: (optional) remote temperature sensor
+      description: |
+        External temperature sensor, to use for meassurement.
+        If you want to use more than one sensor, create a helper to combine several sensors with arithmetic middle and use this helper as input.
+        The target TRVZB's own temperature is not considered a valid source.
+      default:
+      selector:
+        entity:
+          filter:
+            domain: sensor
+            device_class: temperature
+    temperature_source_deskew: # time in seconds, between changes
+      name: Deskew temperature source changes
+      description: |
+        Time in seconds to filter glitches. 0 seconds will disbale this filter.
+        Temperature changes from remote sensor will be ignored, if triggered within this time period.
+        This saves battery life of the TRV, by not sending changes rapidly.
+        Rapid changes of temperature, e.g. when opening window, will be missed or misinterpreted.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 900
+          step: 15
+          mode: slider
+          unit_of_measurement: seconds
+
+trigger:
+  # trigger on temperature change from external sensor
+  - id: "external_temperature_sensor"
+    trigger: temperature.changed
+    target:
+      entity_id: !input temperature_source
+    options:
+      threshold:
+        type: any
+
+variables:
+  # state checking and calculation
+  seconds_since_last_triggered: > # calculate seconds since last triggered, will be VERY high on first trigger
+    {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+    {% set seconds_since_ts = as_timestamp(now()) - ts_last_triggered %}
+    {{ seconds_since_ts }}
+  trigger_entity: '{{ trigger.entity_id }}'
+  trigger_device: '{{ device_id(trigger_entity) }}'
+
+  # get the settings to variables
+  trv: !input trv
+  is_temp_changed: > # trigger, on temperature changed
+    {{ trigger is not none and trigger.id == 'TRV_temp_changed' }}
+
+  # synching external temperature source
+  temperature_source: !input temperature_source
+  temperature_source_deskew: !input temperature_source_deskew
+
+  # thermostat entities
+  thermostat_entities: > # create list of _thermostat entities from device list
+    {% set ns = namespace(entity_list=[]) %}
+    {% for dev in trv %}
+      {% set dev_entity = (device_entities(dev) or [])
+        | select('match', '^climate\\..*_thermostat$')
+        | list | first | default('', true) %}
+      {% set ns.entity_list = ns.entity_list + [dev_entity] %}
+    {% endfor %}
+    {{ ns.entity_list }}
+  trv_master: > # triggering valve or first, if no trigger
+    {% if trigger is not none and trigger.id == 'TRV_temp_changed' %}
+      {{ trigger.entity_id }}
+    {% else %}
+      {{ thermostat_entities | first }}
+    {% endif %}
+
+action:
+
+  - choose: # take actions for specific events
+    - conditions: # remote temperature sensor changed
+        - condition: trigger
+          id: 'external_temperature_sensor'
+        - condition: template
+          value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew }}'
+      sequence:
+        - variables:
+            target_entities: > # list of TRVZB _external_temperature_sensor_value
+              {% set ns = namespace(entity_list=[]) %}
+              {% for dev in trv %}
+                {% set sensor_value = (device_entities(dev) or [])
+                  | select('match', '^number\\..*_external_temperature_sensor_value$')
+                  | list | first | default('', true) %}
+                {% set sensor_active = (device_entities(dev) or [])
+                  | select('match', '^switch\\..*_external_temperature_sensor$')
+                  | list | first | default('', true) %}
+                {% if sensor_active set ns.entity_list = ns.entity_list + [sensor_value] %}
+              {% endfor %}
+              {{ ns.entity_list }}
+            external_temperature: > # convert external temperature to degree celsius
+              {% set temperature = states(temperature_source) | float %}
+              {% set unit = state_attr(temperature_source, 'unit_of_measurement') %}
+              {{ ((temperature - 32) * 5 / 9 if unit == '°F'
+                  else temperature - 273.15 if unit == 'K'
+                  else temperature) | round(1) }}
+        - action: number.set_value
+          target:
+            entity_id: "{{ target_entities }}"
+          data:
+            value: "{{ external_temperature }}"
+        - stop: "for now, nothing more to do; more will be triggered"
+
+    default:  # just in case I missed something
+      - service: system_log.write
+        data:
+          message: >
+            Heating Control by march42
+            triggered with {{ trigger }}
+            trv {{ trv }}
+          level: info
+          logger: blueprints.march42.climate
+
+mode: parallel # run in parallel
+max: 3 # no more than 3 running at once
+max_exceeded: warning

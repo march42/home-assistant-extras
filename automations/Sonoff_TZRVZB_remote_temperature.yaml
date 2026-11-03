@@ -1,7 +1,7 @@
 alias: Remote Temperature WoZi HKR
 description: |
   This is the automation script for my living room TRVZB. Proof of concept and work in progress.
-  Sonchronize temperature from remote sensor to TRVZB radiator valve.
+  Synchronize temperature from remote sensor to TRVZB radiator valve.
 
   The source sensor entity sensor.wozi_temperature is a helper, combining multiple temperature sensors with arithmetic mean.
   The condition checking switch.wohnzimmer_hkr_switch and switch.wohnzimmer_hkr_external_temperature_sensor are on saves battery life, only sending change if meaningful.
@@ -17,12 +17,21 @@ triggers:
     options:
       threshold:
         type: any
+variables:
+  source_entity: '{{ trigger.entity_id }}'
+  source_device: '{{ device_id(source_entity) }}'
+  external_temperature: >
+    {% set temperature = states(source_entity) | float %}
+    {% set unit = state_attr(source_entity, 'unit_of_measurement') %}
+    {{ ((temperature - 32) * 5 / 9 if unit == '°F'
+          else temperature - 273.15 if unit == 'K'
+          else temperature) | round(1) }}
 conditions:
   - condition: template
     value_template: >
       {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
       {% set seconds_since_ts = as_timestamp(now()) - ts_last_triggered %}
-      {{ seconds_since_ts >= 60 }}
+      {{ seconds_since_ts >= 200 }}
     enabled: false
   - condition: switch.is_on
     target:
@@ -32,15 +41,8 @@ conditions:
     options:
       behavior: all
       for: '00:00:00'
+    enabled: true
 actions:
-  - variables:
-      source_entity: '{{ trigger.entity_id }}'
-      external_temperature: >
-        {% set temperature = states(source_entity) | float %}
-        {% set unit = state_attr(source_entity, 'unit_of_measurement') %}
-        {{ ((temperature - 32) * 5 / 9 if unit == '°F'
-             else temperature - 273.15 if unit == 'K'
-             else temperature) | round(1) }}
   - action: number.set_value
     metadata: {}
     target:
