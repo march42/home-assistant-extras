@@ -2,7 +2,7 @@ blueprint:
   name: SONOFF TRVZB Heating
   description: |
     **heating control for SONOFF TRVZB**
-    **Version** 0.00-b03
+    **Version** 0.01-b03
     **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
@@ -126,7 +126,9 @@ action:
                 {% set sensor_active = (device_entities(dev) or [])
                   | select('match', '^switch\\..*_external_temperature_sensor$')
                   | list | first | default('', true) %}
-                {% if sensor_active set ns.entity_list = ns.entity_list + [sensor_value] %}
+                {% if is_state(sensor_active,'on') %}
+                  {% set ns.entity_list = ns.entity_list + [sensor_value] %}
+                {% endif %}
               {% endfor %}
               {{ ns.entity_list }}
             external_temperature: > # convert external temperature to degree celsius

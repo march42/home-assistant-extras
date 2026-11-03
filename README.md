@@ -16,6 +16,13 @@ To most code i make additions and changes, that matters to me.
 Afterwards i publish changes and thoughts, for others to learn.
 And i make contributions to the originating open source project, when possible and meaningful.
 
+## working on blueprints
+
+- working on the (blueprints/automation/march42/IKEA_StyrBar_E2001.yaml)
+  - [Malte](https://community.home-assistant.io/u/Malte)''s [version](https://community.home-assistant.io/t/zha-ikea-four-button-remote-styrbar-for-lights-e2001-e2002/384482)
+  - which extends [SwerveShot](https://community.home-assistant.io/u/SwerveShot)''s [version](https://community.home-assistant.io/t/zha-ikea-four-button-remote-for-lights/347657)
+  - which is based on the work of [frenck](https://community.home-assistant.io/u/frenck)
+
 ## zigpy Project
 
 - (custom_zha_quirks/trvzb-zigpy.py) comes from [zigpy zha-device-handlers](https://github.com/zigpy/zha-device-handlers/tree/dev/zhaquirks/sonoff)
