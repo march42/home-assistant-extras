@@ -5,6 +5,49 @@
 | Model Identifier | SNZB-04P | ZCL, CLuster 0x0000 Basic, Attribute ID 0x0005 Model Identifier |
 | Software Build ID | 2.2.0 | ZCL, CLuster 0x0000 Basic, Attribute ID 0x4000 Software Build ID |
 
+```json
+{
+  "node_descriptor": {
+    "logical_type": 2,
+    "complex_descriptor_available": 0,
+    "user_descriptor_available": 0,
+    "reserved": 0,
+    "aps_flags": 0,
+    "frequency_band": 8,
+    "mac_capability_flags": 128,
+    "manufacturer_code": 4742,
+    "maximum_buffer_size": 82,
+    "maximum_incoming_transfer_size": 255,
+    "server_mask": 11264,
+    "maximum_outgoing_transfer_size": 255,
+    "descriptor_capability_field": 0
+  },
+  "endpoints": {
+    "1": {
+      "profile_id": "0x0104",
+      "device_type": "0x0402",
+      "input_clusters": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0020",
+        "0x0500",
+        "0xfc11",
+        "0xfc57"
+      ],
+      "output_clusters": [
+        "0x0003",
+        "0x0006",
+        "0x0019"
+      ]
+    }
+  },
+  "manufacturer": "eWeLink",
+  "model": "SNZB-04P",
+  "class": "zhaquirks.sonoff.snzb04p:(eWeLink / SNZB-04P)"
+}}
+```
+
 ### During onboarding process, the eWeLink APP configures following.
 
 ZCL Write Attribute, Cluster 0x0500 Intruder Alarm System Zone, Attribute ID 0x0010 IAS_CIE_Address, IEEE address 0xf0 =fa90d130004b1200
@@ -54,3 +97,10 @@ When tamparing
 
 ZCL Report Attribute, Cluster 0xfc11 Manufacturer Specific, Attribute ID 0x2000 unknown, uint8=0x20 0x00=0
 ZCL Report Attribute, Cluster 0xfc11 Manufacturer Specific, Attribute ID 0x2000 unknown, uint8=0x20 0x01=1
+
+### ZigBee Binding
+
+The device has defined an output cluster 0x0006 On/Off Switching.
+
+ZigBee binding allows binding the contact sensor to devices with On/Off input cluster.
+I want to use this, to bind the contact sensor to my thermostatic radiator valves. I want it to shut off, on window opening and back on after window closing.

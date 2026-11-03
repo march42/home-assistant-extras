@@ -2,7 +2,7 @@ blueprint:
   name: SONOFF TRVZB Heating
   description: |
     **heating control for SONOFF TRVZB**
-    **Version** 0.01-b04
+    **Version** 0.01-b05
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
@@ -34,19 +34,6 @@ blueprint:
               manufacturer: SONOFF
               model: TRVZB
 
-    winter_mode:
-      name: (optional) Winter mode
-      description: >
-        If selected, this needs to be 'on' or 'active' to enable heating services.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - binary_sensor
-          multiple: false
-
     temperature_source: # some thermometer reporting to Home Assistant
       name: (optional) remote temperature sensor
       description: |
@@ -75,6 +62,162 @@ blueprint:
           mode: slider
           unit_of_measurement: seconds
 
+    winter_mode: # restrict actions to winter, to save battery on TRVZB
+      name: (optional) Winter mode
+      description: >
+        If selected, this needs to be 'on' or 'active' to enable heating services.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - binary_sensor
+          multiple: false
+    scheduler: # scheduler helper, to activate comfort temperature
+      name: (Optional) Scheduler for comfort temperature
+      description: >
+        Scheduler to specify times, to activate comfort or away temperature.
+        While 'off', eco temperature will be used.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - schedule
+          multiple: false
+      default:
+    min_temp: # default value minimum temperature
+      name: Minimum Temperature
+      description: >
+        Temperature, to use as minimum.
+        This is used as a default value, if Eco Temperature not specified.
+      default: 12
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+    day_temp: # comfort temperature
+      name: Day Temperature
+      description: >
+        Temperature, to use for active heating.
+        This is used as a default value, if Comfort Temperature not specified.
+      default: 18
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+
+    window_sensor: # contact sensor on windows or doors
+      name: (Optional) Window sensor
+      description: |
+        Window opened sensor or group of sensors, to check.
+        If 'on' the window is considered opened and the valves will be shut off.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - binary_sensor
+      default:
+    opened_temp:
+      name: Opened Window Temperature
+      description: >
+        Temperature, to use if window gets opened.
+      default: 7.0
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+    windowopened_delay:
+      name: Delay window opened
+      description: >
+        Time in minutes window needs to be opened, before acting.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
+
+    persons:
+      name: (optional) Persons for presence detection
+      description: |
+        Persons to check present for activating comfort temperature.
+        If none of the persons are detected home, the away temperature will be used instead of confort temperature.
+        Instead of persons, you can use 'device_tracker' as well.
+        If undefined, the script will always set persons_home=-1.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - person
+              - device_tracker
+              - input_boolean
+      default:
+    away_temp:
+      name: Away Temperature
+      description: >
+        Temperature, to use if no one is at home.
+      default: 12.0
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
+    nobodyhome_delay:
+      name: Delay nobody home
+      description: >
+        Time in minutes before acting on no persons at home.
+      default: 3
+      selector:
+        number:
+          min: 0
+          max: 99
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
+
+    event_delay: # delaying event trigger to filter glitches
+      name: Delay Event
+      description: >
+        Time in seconds changes needs to be active, before acting.
+        This will delay the triggered event and filter glitches.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: seconds
+    action_delay: # delay between actions, to ensure components have time to get ready again
+      name: Delay Actions
+      description: >
+        Time in seconds delaying between subsequent actions.
+        To ensure the components are ready again.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 9
+          step: 1
+          mode: slider
+          unit_of_measurement: seconds
+
 trigger:
   # trigger on temperature change from external sensor
   - id: "external_temperature_sensor"
@@ -85,8 +228,73 @@ trigger:
       threshold:
         type: any
 
+  - id: "scheduler_start" # scheduler switching to on
+    platform: template
+    value_template: >
+      {{ scheduler is not none and is_state(scheduler, 'on') }}
+    alias: 'scheduler switching to on'
+    for:
+      seconds: !input event_delay
+  - id: "scheduler_end" # scheduler switching to off
+    platform: template
+    value_template: >
+      {{ scheduler is not none and is_state(scheduler, 'off') }}
+    alias: 'scheduler switching to off'
+    for:
+      seconds: !input event_delay
+  - id: "winter_start" # winter mode switching to on
+    platform: template
+    value_template: >
+      {{ winter_mode is not none and is_state(winter_mode, 'on') }}
+    alias: 'winter mode switching to on'
+    for:
+      seconds: !input event_delay
+  - id: "winter_end" # winter mode switching to off
+    platform: template
+    value_template: >
+      {{ winter_mode is not none and is_state(winter_mode, 'off') }}
+    alias: 'winter mode switching to off'
+    for:
+      seconds: !input event_delay
+
+  - id: "window_opened" # windows opened > 0
+    platform: template
+    value_template: >
+      {{ window_sensor is not none and
+      ( expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+    alias: 'window opened'
+    for:
+      minutes: !input windowopened_delay
+  - id: "window_closed" # windows closed (opened == 0)
+    platform: template
+    value_template: >
+      {{ window_sensor is not none and
+      ( expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+    alias: 'windows closed'
+    for:
+      #minutes: !input windowopened_delay # don't use on closing windows
+      seconds: !input event_delay
+  - id: "nobody_home" # nobody home
+    platform: template
+    value_template: >
+      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
+    alias: 'nobody home'
+    for:
+      minutes: !input nobodyhome_delay
+  - id: "somebody_home" # somebody home
+    platform: template
+    value_template: >
+      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
+    alias: 'someone came home'
+    for:
+      #minutes: !input nobodyhome_delay # don't use on getting home
+      seconds: !input event_delay
+
 trigger_variables:
   winter_mode: !input winter_mode
+  scheduler: !input scheduler
+  window_sensor: !input window_sensor
+  persons: !input persons
 
 variables:
   # state checking and calculation
@@ -105,8 +313,6 @@ variables:
 
   # get the settings to variables
   trv: !input trv
-  is_temp_changed: > # trigger, on temperature changed
-    {{ trigger is not none and trigger.id == 'TRV_temp_changed' }}
 
   # synching external temperature source
   temperature_source: !input temperature_source
@@ -129,9 +335,63 @@ variables:
       {{ thermostat_entities | first }}
     {% endif %}
 
+  # value settings
+  min_temp: !input min_temp
+  eco_temp: "{{ min_temp }}"
+  day_temp: !input day_temp
+  comfort_temp: "{{ day_temp }}"
+  opened_temp: !input opened_temp
+  away_temp: !input away_temp
+  event_delay: !input event_delay
+  action_delay: !input action_delay
+
   # state and environment
+  windows_opened: > # count opened windows
+    {% if window_sensor is not none %}
+      {{ expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count }}
+    {% else %}
+      0
+    {% endif %}
+  persons_home: > # count the persons home
+    {% if persons is not none %}
+      {{ expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count }}
+    {% else %}
+      -1
+    {% endif %}
   is_winter: > # winter_mode unset or any is on
     {{ winter_mode is none or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+  is_comfort: > # scheduler unset or active
+    {{ scheduler is none or expand(scheduler) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+
+  # enumerate scheduled temperature
+  scheduled_preset: >
+    {% if windows_opened > 0 %}
+      opened
+    {% else %}
+      {% if is_comfort %}
+        {% if persons_home == 0 %}
+          away
+        {% else %}
+          comfort
+        {% endif %}
+      {% else %}
+        eco
+      {% endif %}
+    {% endif %}
+  scheduled_temp: >
+    {% if windows_opened > 0 %}
+      {{ opened_temp }}
+    {% else %}
+      {% if is_comfort %}
+        {% if persons_home == 0 %}
+          {{ away_temp }}
+        {% else %}
+          {{ comfort_temp }}
+        {% endif %}
+      {% else %}
+        {{ eco_temp }}
+      {% endif %}
+    {% endif %}
 
 action:
 
@@ -171,6 +431,52 @@ action:
           data:
             value: "{{ temperature_source_value }}"
         - stop: "for now, nothing more to do; more will be triggered"
+
+    - conditions: # winter started
+        - id: 'winter_start'
+          condition: trigger
+      sequence:
+        - action: climate.turn_on
+          target:
+            entity_id: "{{ thermostat_entities }}"
+        - delay:
+            seconds: !input action_delay
+    - conditions: # winter ended
+        - id: 'winter_end'
+          condition: trigger
+      sequence:
+        - action: climate.turn_off
+          target:
+            entity_id: "{{ thermostat_entities }}"
+
+    - conditions: # scheduled temperature changes
+        - condition: or
+          conditions:
+            - id: 'scheduler_start'
+              condition: trigger
+            - id: 'scheduler_end'
+              condition: trigger
+            - id: 'window_opened'
+              condition: trigger
+            - id: 'window_closed'
+              condition: trigger
+            - id: 'nobody_home'
+              condition: trigger
+            - id: 'somebody_home'
+              condition: trigger
+        - value_template: '{{ is_winter }}'
+          condition: template
+          enabled: true
+      sequence:
+        - delay:
+            seconds: !input action_delay
+          enabled: false
+        - action: climate.set_temperature
+          target:
+            entity_id: "{{ thermostat_entities }}"
+          data:
+            temperature: "{{ scheduled_temp }}"
+            hvac_mode: heat
 
     default:  # just in case I missed something
       - service: system_log.write
