@@ -2,8 +2,8 @@ blueprint:
   name: SONOFF TRVZB Heating
   description: |
     **heating control for SONOFF TRVZB**
-    **Version** 0.01-b03
-    **Repository** [march42/home-assistant-extras](march42/home-assistant-extras/)
+    **Version** 0.01-b04
+    **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
 
@@ -34,11 +34,24 @@ blueprint:
               manufacturer: SONOFF
               model: TRVZB
 
+    winter_mode:
+      name: (optional) Winter mode
+      description: >
+        If selected, this needs to be 'on' or 'active' to enable heating services.
+      default:
+      selector:
+        entity:
+          filter:
+            - domain:
+              - input_boolean
+              - binary_sensor
+          multiple: false
+
     temperature_source: # some thermometer reporting to Home Assistant
       name: (optional) remote temperature sensor
       description: |
         External temperature sensor, to use for meassurement.
-        If you want to use more than one sensor, create a helper to combine several sensors with arithmetic middle and use this helper as input.
+        If you want to use more than one sensor, create a helper to combine several sensors with arithmetic middle and use this helper as input here.
         The target TRVZB's own temperature is not considered a valid source.
       default:
       selector:
@@ -49,9 +62,9 @@ blueprint:
     temperature_source_deskew: # time in seconds, between changes
       name: Deskew temperature source changes
       description: |
-        Time in seconds to filter glitches. 0 seconds will disbale this filter.
+        Time in seconds to filter glitches. Setting 0 seconds will disbale this filter.
         Temperature changes from remote sensor will be ignored, if triggered within this time period.
-        This saves battery life of the TRV, by not sending changes rapidly.
+        This saves battery life of the TRV, by not sending changes too rapidly.
         Rapid changes of temperature, e.g. when opening window, will be missed or misinterpreted.
       default: 0
       selector:
@@ -72,14 +85,23 @@ trigger:
       threshold:
         type: any
 
+trigger_variables:
+  winter_mode: !input winter_mode
+
 variables:
   # state checking and calculation
   seconds_since_last_triggered: > # calculate seconds since last triggered, will be VERY high on first trigger
     {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
     {% set seconds_since_ts = as_timestamp(now()) - ts_last_triggered %}
-    {{ seconds_since_ts }}
-  trigger_entity: '{{ trigger.entity_id }}'
-  trigger_device: '{{ device_id(trigger_entity) }}'
+    {{ as_timestamp(now()) }}
+  trigger_entity: > # enumerate triggering entity
+    {% if trigger is not none and trigger.entity_id is not none %}
+      {{ trigger.entity_id }}
+    {% endif %}
+  trigger_device: > # enumerate device_id from triggering entity
+    {% if trigger is not none and trigger.entity_id is not none %}
+      {{ device_id(trigger_entity) }}
+    {% endif %}
 
   # get the settings to variables
   trv: !input trv
@@ -100,21 +122,27 @@ variables:
       {% set ns.entity_list = ns.entity_list + [dev_entity] %}
     {% endfor %}
     {{ ns.entity_list }}
-  trv_master: > # triggering valve or first, if no trigger
+  trv_master: > # triggering valve or first in list, if no trigger
     {% if trigger is not none and trigger.id == 'TRV_temp_changed' %}
       {{ trigger.entity_id }}
     {% else %}
       {{ thermostat_entities | first }}
     {% endif %}
 
+  # state and environment
+  is_winter: > # winter_mode unset or any is on
+    {{ winter_mode is none or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+
 action:
 
   - choose: # take actions for specific events
     - conditions: # remote temperature sensor changed
-        - condition: trigger
-          id: 'external_temperature_sensor'
-        - condition: template
-          value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew }}'
+        - id: 'external_temperature_sensor'
+          condition: trigger
+        - value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew }}'
+          condition: template
+        - value_template: '{{ is_winter }}'
+          condition: template
       sequence:
         - variables:
             target_entities: > # list of TRVZB _external_temperature_sensor_value
@@ -131,8 +159,8 @@ action:
                 {% endif %}
               {% endfor %}
               {{ ns.entity_list }}
-            external_temperature: > # convert external temperature to degree celsius
-              {% set temperature = states(temperature_source) | float %}
+            temperature_source_value: > # convert external temperature to degree celsius
+              {% set temperature = states(trigger_entity or temperature_source) | float %}
               {% set unit = state_attr(temperature_source, 'unit_of_measurement') %}
               {{ ((temperature - 32) * 5 / 9 if unit == '°F'
                   else temperature - 273.15 if unit == 'K'
@@ -141,7 +169,7 @@ action:
           target:
             entity_id: "{{ target_entities }}"
           data:
-            value: "{{ external_temperature }}"
+            value: "{{ temperature_source_value }}"
         - stop: "for now, nothing more to do; more will be triggered"
 
     default:  # just in case I missed something
