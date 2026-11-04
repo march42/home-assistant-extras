@@ -1,8 +1,8 @@
 blueprint:
-  name: SONOFF TRVZB Heating
+  name: Sonoff TRVZB Heating
   description: |
-    **heating control for SONOFF TRVZB**
-    **Version** 0.01-b05
+    **heating control for Sonoff TRVZB**
+    **Version** 1.00-b06
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
@@ -21,6 +21,9 @@ blueprint:
   author: march42
   source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/SONOFF_TRVZB_heating.yaml
   domain: automation
+  homeassistant:
+    #min_version: "2024.6.0" # input sections were added
+    min_version: "2024.10.0" # some changes were made to the blueprint schema
 
   input:
     trv: # choosen Sonoff TRVZB
@@ -124,19 +127,7 @@ blueprint:
           filter:
             - domain:
               - binary_sensor
-      default:
-    opened_temp:
-      name: Opened Window Temperature
-      description: >
-        Temperature, to use if window gets opened.
-      default: 7.0
-      selector:
-        number:
-          min: 5.0
-          max: 25.0
-          step: 0.5
-          mode: slider
-          unit_of_measurement: °C
+      default: []
     windowopened_delay:
       name: Delay window opened
       description: >
@@ -149,6 +140,18 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+    opened_temp:
+      name: Opened Window Temperature
+      description: >
+        Temperature, to use if window gets opened.
+      default: 7.0
+      selector:
+        number:
+          min: 5.0
+          max: 25.0
+          step: 0.5
+          mode: slider
+          unit_of_measurement: °C
 
     persons:
       name: (optional) Persons for presence detection
@@ -165,7 +168,7 @@ blueprint:
               - person
               - device_tracker
               - input_boolean
-      default:
+      default: []
     away_temp:
       name: Away Temperature
       description: >
@@ -218,7 +221,7 @@ blueprint:
           mode: slider
           unit_of_measurement: seconds
 
-trigger:
+triggers:
   # trigger on temperature change from external sensor
   - id: "external_temperature_sensor"
     trigger: temperature.changed
@@ -261,7 +264,7 @@ trigger:
     platform: template
     value_template: >
       {{ window_sensor is not none and
-      ( expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 ) }}
+        expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 }}
     alias: 'window opened'
     for:
       minutes: !input windowopened_delay
@@ -269,7 +272,7 @@ trigger:
     platform: template
     value_template: >
       {{ window_sensor is not none and
-      ( expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count == 0 ) }}
+        expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count == 0 }}
     alias: 'windows closed'
     for:
       #minutes: !input windowopened_delay # don't use on closing windows
@@ -277,18 +280,22 @@ trigger:
   - id: "nobody_home" # nobody home
     platform: template
     value_template: >
-      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
+      {{ persons is not none and
+        expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
     alias: 'nobody home'
     for:
       minutes: !input nobodyhome_delay
   - id: "somebody_home" # somebody home
     platform: template
     value_template: >
-      {{ persons is not none and expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
+      {{ persons is not none and
+        expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
     alias: 'someone came home'
     for:
       #minutes: !input nobodyhome_delay # don't use on getting home
       seconds: !input event_delay
+
+conditions: []
 
 trigger_variables:
   winter_mode: !input winter_mode
@@ -395,7 +402,7 @@ variables:
 
 action:
 
-  - choose: # take actions for specific events
+  - choose: # take actions for specific conditions
     - conditions: # remote temperature sensor changed
         - id: 'external_temperature_sensor'
           condition: trigger
