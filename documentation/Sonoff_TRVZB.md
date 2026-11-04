@@ -84,6 +84,7 @@ WWAH_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC57
 | 0xFC11 | 0x6007 | SONOFF_VALVE_RUNNING_VOLTAGE_ATTR_ID | int16 |
 | 0xFC11 | 0x6008 | ??? Attribute | uint8, reported 0x7f=127 after saving scheduler |
 | 0xFC11 | 0x6009 | Regular Heating Setpoint Attribute | int16 in 1/100th degree celsius 1500=15.0°C |
+| 0xFC11 | 0x600A | Auto Mode Heating Setpoint Attribute | int16 in 1/100th degree celsius 1500=15.0°C |
 | 0xFC11 | 0x600B | SONOFF_VALVE_OPENING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
 | 0xFC11 | 0x600C | SONOFF_VALVE_CLOSING_PERCENTAGE_ATTR_ID | in percent (0x64=100=100%) |
 | 0xFC11 | 0x600D | SONOFF_EXTERNAL_TEMP_SENSOR_VALUE_ATTR_ID | int16, in 1/100th degree celsius |

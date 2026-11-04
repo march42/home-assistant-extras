@@ -62,3 +62,24 @@ not_to:
   - "unknown"
   - "unavailable"
 ```
+
+### checking and counting input states
+
+```yaml
+variables:
+  is_winter: > # winter_mode unset or any is on
+    {{ winter_mode is none or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+```
+
+### ZigBee via ZHA
+
+```yaml
+action: zha.set_zigbee_cluster_attribute
+data:
+  ieee: "{{ device_attr('light.room3', 'identifiers') | selectattr(0,'eq','zha') | map(attribute=1) | first }}"
+  endpoint_id: 1
+  cluster_id: 0xFC11
+  attribute: 0x600D
+  value: "{{ temperature_source_value * 100 | round(1) }}"
+enabled: false
+```

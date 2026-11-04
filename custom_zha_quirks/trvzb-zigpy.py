@@ -2,6 +2,7 @@
 
 import zigpy.types as t
 from zigpy.zcl.foundation import BaseAttributeDefs, DataTypeId, ZCLAttributeDef
+from zha.zigbee.cluster_handlers.const import SONOFF_CLUSTER
 
 from zhaquirks.builder import (
     NumberDeviceClass,
@@ -13,7 +14,7 @@ from zhaquirks.clusters import CustomCluster
 
 
 """SONOFF CustomCluster specific thermostat attribute ids."""
-SONOFF_MANUFACTURER_SPECIFIC_CLUSTER_ID = 0xFC11
+SONOFF_CLUSTER = 0xFC11
 
 # Child Lock, Attribute ID 0x0000, Bool
 SONOFF_CHILD_LOCK_ATTR_ID = 0x0000
@@ -55,6 +56,10 @@ SONOFF_SCHEDULER_UNKNOWN_ATTR_ID = 0x6008
 
 # Normal Mode Heating Set Point, Attribute ID 0x6009, int16
 SONOFF_REGULAR_HEATING_SETPOINT_ATTR_ID = 0x6009
+# in 1/100th degree celsius (1550=15.5°C, 2000=20.0°C)
+
+# Auto Mode Heating Set Point, Attribute ID 0x600a, int16
+SONOFF_AUTOMODE_HEATING_SETPOINT_ATTR_ID = 0x600A
 # in 1/100th degree celsius (1550=15.5°C, 2000=20.0°C)
 
 # Valve Opening Percentage, Attribute ID 0x600b, uint8
@@ -115,7 +120,7 @@ class SonoffDisplayOrientation(t.enum8):
 class CustomSonoffCluster(CustomCluster):
     """Custom Sonoff cluster."""
 
-    cluster_id = SONOFF_MANUFACTURER_SPECIFIC_CLUSTER_ID
+    cluster_id = SONOFF_CLUSTER
 
     class AttributeDefs(BaseAttributeDefs):
         """Attribute definitions."""
@@ -173,6 +178,11 @@ class CustomSonoffCluster(CustomCluster):
         )
         regular_heating_setpoint = ZCLAttributeDef(
             id=SONOFF_REGULAR_HEATING_SETPOINT_ATTR_ID,
+            type=t.int16s,
+            manufacturer_code=None,
+        )
+        automode_heating_setpoint = ZCLAttributeDef(
+            id=SONOFF_AUTOMODE_HEATING_SETPOINT_ATTR_ID,
             type=t.int16s,
             manufacturer_code=None,
         )
@@ -333,6 +343,19 @@ BASE_TRVZB_QUIRK = (
         multiplier=0.01,
         translation_key="regular_heating_setpoint",
         fallback_name="Regular heating setpoint",
+        initially_disabled=True,
+    )
+    .number(
+        CustomSonoffCluster.AttributeDefs.automode_heating_setpoint.name,
+        CustomSonoffCluster.cluster_id,
+        min_value=4.0,
+        max_value=35.0,
+        step=0.5,
+        device_class=NumberDeviceClass.TEMPERATURE,
+        unit=UnitOfTemperature.CELSIUS,
+        multiplier=0.01,
+        translation_key="automode_heating_setpoint",
+        fallback_name="Auto mode heating setpoint",
         initially_disabled=True,
     )
     .enum(

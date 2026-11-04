@@ -1,0 +1,137 @@
+blueprint:
+  name: TEST Input Selector
+  description: |
+    **TEST** for Input Selector
+    **Version** 1.00-b02
+    **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
+
+    I created this TEST for input selector to determine when and why my
+    selectors disappear. In some of my automation blueprints the input
+    selector are not shown. I assume this is caused by the default
+    value definition. So i need some kind of test, to ensure, before
+    opening an issue on [GitHub](https://github.com/home-assistant/core/issues?q=is%3Aissue+input+selector)
+
+    **SOLUTION**
+    - for selector with attribute **multiple==false use empty entity** `default:`
+    - for selector with attribute **multiple==true use empty list** `default: []`
+
+    Copyright (C) 2026 Marc Hefter
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    Please see the GNU General Public License at [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+  author: march42
+  source_url: https://github.com/march42/home-assistant-extras/blob/main/config/blueprints/automation/test_input_selector.yaml
+  domain: automation
+  homeassistant:
+    min_version: "2024.10.0" # some changes were made to the blueprint schema
+
+  input:
+    trv: # choose TRV
+      name: TRV
+      description: Thermostats (thermostatic regulated valve) to be controlled with this settings
+      selector:
+        device:
+          multiple: true
+          entity:
+            - domain: climate
+    window_sensor: # contact sensor on windows or doors
+      name: (Optional) Window sensor
+      description: |
+        Window opened sensor or group of sensors, to check.
+        If 'on' the window is considered opened and the valves will be shut off.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - binary_sensor
+      default: # if multiple==true an empty list would be necessary
+    door_sensor: # contact sensor on windows or doors
+      name: Door sensor
+      description: |
+        Window opened sensor or group of sensors, to check.
+        If 'on' the window is considered opened and the valves will be shut off.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - binary_sensor
+    test_sensor: # contact sensor on windows or doors
+      name: (Optional) Test sensor
+      description: |
+        Window opened sensor or group of sensors, to check.
+        If 'on' the window is considered opened and the valves will be shut off.
+      selector:
+        entity:
+          filter:
+            - domain:
+              - binary_sensor
+      default: # if multiple==false an empty variable is right
+    persons:
+      name: (optional) Persons for presence detection
+      description: |
+        Persons to check present for activating comfort temperature.
+        If none of the persons are detected home, the away temperature will be used instead of confort temperature.
+        Instead of persons, you can use 'device_tracker' as well.
+        If undefined, the script will always set persons_home=-1.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - person
+              - device_tracker
+              - input_boolean
+      default: [] # if multiple==true an empty list is necessary
+    presence:
+      name: Presence detection
+      description: |
+        Persons to check present for activating comfort temperature.
+        If none of the persons are detected home, the away temperature will be used instead of confort temperature.
+        Instead of persons, you can use 'device_tracker' as well.
+        If undefined, the script will always set persons_home=-1.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - person
+              - device_tracker
+              - input_boolean
+
+trigger_variables:
+  - input_trv: !input trv
+  - input_window_sensor: !input window_sensor
+  - input_door_sensor: !input door_sensor
+  - input_test_sensor: !input test_sensor
+  - input_persons: !input persons
+  - input_presence: !input presence
+
+variables:
+  - trv: "{{ input_trv }}"
+  - window_sensor: "{{ input_window_sensor }}"
+  - door_sensor: "{{ input_door_sensor }}"
+  - test_sensor: "{{ input_test_sensor }}"
+  - persons: "{{ input_persons }}"
+  - presence: "{{ input_presence }}"
+
+triggers: []
+conditions: []
+action:
+  - delay: [00:00:01]
+
+mode: restart
+#max: 3 # default 10
+#max_exceeded: info # default warning
+trace:
+  stored_traces: 10
