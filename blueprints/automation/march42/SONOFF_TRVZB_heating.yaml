@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating
   description: |
     **heating control for Sonoff TRVZB**
-    **Version** 1.00-b06
+    **Version** 1.00-b10
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
@@ -33,9 +33,23 @@ blueprint:
         device:
           multiple: true
           filter:
-            - integration: zha # MQTT/z2m uses differend entity naming
+            - domain: climate
+            - model: TRVZB
               manufacturer: SONOFF
-              model: TRVZB
+              integration: zha # MQTT/z2m uses differend entity naming
+    manually_revert_delay:
+      name: Delay Revert from manually setting target temperature
+      description: |
+        Time in minutes before reverting to schedule after manually setting radiator valve.
+        Set to 0, to ignore manually changed temperature.
+      default: 90
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 1
+          mode: slider
+          unit_of_measurement: minutes
 
     temperature_source: # some thermometer reporting to Home Assistant
       name: (optional) remote temperature sensor
@@ -132,7 +146,7 @@ blueprint:
       name: Delay window opened
       description: >
         Time in minutes window needs to be opened, before acting.
-      default: 3
+      default: 3 # it takes some time to cool down a room
       selector:
         number:
           min: 0
@@ -144,7 +158,7 @@ blueprint:
       name: Opened Window Temperature
       description: >
         Temperature, to use if window gets opened.
-      default: 7.0
+      default: 7.0 # minimum frost protection
       selector:
         number:
           min: 5.0
@@ -173,7 +187,7 @@ blueprint:
       name: Away Temperature
       description: >
         Temperature, to use if no one is at home.
-      default: 12.0
+      default: 12.0 # prevent the room furnishings from chilling too much
       selector:
         number:
           min: 5.0
@@ -185,7 +199,7 @@ blueprint:
       name: Delay nobody home
       description: >
         Time in minutes before acting on no persons at home.
-      default: 3
+      default: 3 # gives you some time, to get your mail
       selector:
         number:
           min: 0
@@ -203,7 +217,7 @@ blueprint:
       selector:
         number:
           min: 0
-          max: 9
+          max: 30
           step: 1
           mode: slider
           unit_of_measurement: seconds
@@ -212,7 +226,7 @@ blueprint:
       description: >
         Time in seconds delaying between subsequent actions.
         To ensure the components are ready again.
-      default: 2
+      default: 0 # who knows, this should be unnecessary
       selector:
         number:
           min: 0
@@ -223,74 +237,97 @@ blueprint:
 
 triggers:
   # trigger on temperature change from external sensor
-  - id: "external_temperature_sensor"
+  - alias: "Temperature on remote sensor changed"
+    id: "external_temperature_sensor"
     trigger: temperature.changed
     target:
       entity_id: !input temperature_source
     options:
       threshold:
         type: any
+  # trigger on changed target temperature
+  - alias: "Target temperature on TRV changed"
+    id: 'TRV_temp_changed'
+    platform: state # temperature setting changed
+  #  entity_id: !input trv # this doesn't work with device_id
+    entity_id: > # build device entities
+      {% set ns = namespace(entity_list=[]) %}
+      {% for dev in trv %}
+        {% set dev_entity = (device_entities(dev) or [])
+          | select('match', '^climate\\..*_thermostat$')
+          | list | first | default('', true) %}
+        {% set ns.entity_list = ns.entity_list + [dev_entity] %}
+      {% endfor %}
+      {{ ns.entity_list }}
+    attribute: temperature
+  #  #not_to: {{ scheduled_temp }} # unluckily this is not working
+    not_to:
+      - "unknown"
+      - "unavailable"
+    for:
+      minutes: !input manually_revert_delay
+      seconds: 13 # delay always, to ensure manually handling is done
 
-  - id: "scheduler_start" # scheduler switching to on
+  - alias: "Scheduler switched to ON"
+    id: "scheduler_start" # scheduler switching to on
     platform: template
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'on') }}
-    alias: 'scheduler switching to on'
     for:
       seconds: !input event_delay
-  - id: "scheduler_end" # scheduler switching to off
+  - alias: "Scheduler switched to OFF"
+    id: "scheduler_end" # scheduler switching to off
     platform: template
     value_template: >
       {{ scheduler is not none and is_state(scheduler, 'off') }}
-    alias: 'scheduler switching to off'
     for:
       seconds: !input event_delay
-  - id: "winter_start" # winter mode switching to on
+  - alias: "Winter mode switched to ON"
+    id: "winter_start" # winter mode switching to on
     platform: template
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'on') }}
-    alias: 'winter mode switching to on'
     for:
       seconds: !input event_delay
-  - id: "winter_end" # winter mode switching to off
+  - alias: "Winter mode switched to OFF"
+    id: "winter_end" # winter mode switching to off
     platform: template
     value_template: >
       {{ winter_mode is not none and is_state(winter_mode, 'off') }}
-    alias: 'winter mode switching to off'
     for:
       seconds: !input event_delay
 
-  - id: "window_opened" # windows opened > 0
+  - alias: "Window opened" # windows opened > 0
+    id: "window_opened"
     platform: template
     value_template: >
       {{ window_sensor is not none and
         expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 }}
-    alias: 'window opened'
     for:
       minutes: !input windowopened_delay
-  - id: "window_closed" # windows closed (opened == 0)
+  - alias: "All windows closed" # windows closed (opened == 0)
+    id: "window_closed"
     platform: template
     value_template: >
       {{ window_sensor is not none and
         expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count == 0 }}
-    alias: 'windows closed'
     for:
       #minutes: !input windowopened_delay # don't use on closing windows
       seconds: !input event_delay
-  - id: "nobody_home" # nobody home
+  - alias: "Nobody home" # persons count == 0
+    id: "nobody_home" # nobody home
     platform: template
     value_template: >
       {{ persons is not none and
         expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count == 0 }}
-    alias: 'nobody home'
     for:
       minutes: !input nobodyhome_delay
-  - id: "somebody_home" # somebody home
+  - alias: "Somebody came home" # persons count != 0
+    id: "somebody_home" # somebody home
     platform: template
     value_template: >
       {{ persons is not none and
-        expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count != 0 }}
-    alias: 'someone came home'
+        expand(persons) | selectattr('state', 'in', ['home','on','active']) | list | count > 0 }}
     for:
       #minutes: !input nobodyhome_delay # don't use on getting home
       seconds: !input event_delay
@@ -305,13 +342,19 @@ trigger_variables:
 
 variables:
   # state checking and calculation
-  seconds_since_last_triggered: > # calculate seconds since last triggered, will be VERY high on first trigger
-    {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
-    {% set seconds_since_ts = as_timestamp(now()) - ts_last_triggered %}
-    {{ as_timestamp(now()) }}
+  seconds_since_last_triggered: > # calculate seconds since last triggered, will be way high on first trigger
+    {% if this is none or this.attributes.last_triggered is none %}
+      {{ as_timestamp(now()) }}
+    {% else %}
+      {% set ts_last_triggered = as_timestamp(this.attributes.last_triggered | default(0)) %}
+      {% set seconds_since_ts = (as_timestamp(now()) - ts_last_triggered) | int %}
+      {{ seconds_since_ts }}
+    {% endif %}
   trigger_entity: > # enumerate triggering entity
     {% if trigger is not none and trigger.entity_id is not none %}
       {{ trigger.entity_id }}
+    {% else %}
+      {{ none }}
     {% endif %}
   trigger_device: > # enumerate device_id from triggering entity
     {% if trigger is not none and trigger.entity_id is not none %}
@@ -320,27 +363,15 @@ variables:
 
   # get the settings to variables
   trv: !input trv
+  manually_revert_delay: !input manually_revert_delay
+  TRV_manual_override: > # changed temperature on TRV
+    {{ (trigger is not none and trigger.id == 'TRV_temp_changed')
+      and manually_revert_delay != 0
+      and state_attr(trigger_entity,"temperature") != scheduled_temp }}
 
   # synching external temperature source
   temperature_source: !input temperature_source
   temperature_source_deskew: !input temperature_source_deskew
-
-  # thermostat entities
-  thermostat_entities: > # create list of _thermostat entities from device list
-    {% set ns = namespace(entity_list=[]) %}
-    {% for dev in trv %}
-      {% set dev_entity = (device_entities(dev) or [])
-        | select('match', '^climate\\..*_thermostat$')
-        | list | first | default('', true) %}
-      {% set ns.entity_list = ns.entity_list + [dev_entity] %}
-    {% endfor %}
-    {{ ns.entity_list }}
-  trv_master: > # triggering valve or first in list, if no trigger
-    {% if trigger is not none and trigger.id == 'TRV_temp_changed' %}
-      {{ trigger.entity_id }}
-    {% else %}
-      {{ thermostat_entities | first }}
-    {% endif %}
 
   # value settings
   min_temp: !input min_temp
@@ -406,10 +437,12 @@ action:
     - conditions: # remote temperature sensor changed
         - id: 'external_temperature_sensor'
           condition: trigger
-        - value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew }}'
-          condition: template
         - value_template: '{{ is_winter }}'
           condition: template
+        #- value_template: > # TODO: do i need to check, if it's a SONOFF TRVZB (or TRV-ZBT or other thermostat with those functionality)
+        #      {{ device_attr(device_id("climate.wohnzimmer_hkr_thermostat"),"manufacturer") == 'SONOFF'
+        #        and device_attr(device_id("climate.wohnzimmer_hkr_thermostat"),"model") == 'TRVZB' }}
+        #  condition: template
       sequence:
         - variables:
             target_entities: > # list of TRVZB _external_temperature_sensor_value
@@ -432,12 +465,34 @@ action:
               {{ ((temperature - 32) * 5 / 9 if unit == '°F'
                   else temperature - 273.15 if unit == 'K'
                   else temperature) | round(1) }}
+        - action: zha.set_zigbee_cluster_attribute
+          data: # this fails for multiple trv selected and is not compatible to other devices
+            ieee: "{{ device_attr('trv', 'identifiers') | selectattr(0,'eq','zha') | map(attribute=1) | first }}"
+            endpoint_id: 1
+            cluster_id: 0xFC11
+            attribute: 0x600D
+            value: "{{ temperature_source_value * 100 | round(1) }}"
+          enabled: false
         - action: number.set_value
           target:
             entity_id: "{{ target_entities }}"
           data:
             value: "{{ temperature_source_value }}"
         - stop: "for now, nothing more to do; more will be triggered"
+    - conditions: # temperature on TRV changed
+        - condition: trigger
+          id: 'TRV_temp_changed'
+      sequence:
+        - if: # ignore determined changes
+            - condition: template
+              value_template: > # if TRV_manual_override and function not disabled
+                {{ TRV_manual_override and manually_revert_delay > 0 }}
+          then:
+            - delay: # just do nothing, TODO: is there a BREAK action
+                seconds: 0
+              enabled: false
+          else:
+            - stop: "ignore changed temperature, not manually or manually_revert_delay == 0"
 
     - conditions: # winter started
         - id: 'winter_start'
@@ -445,7 +500,7 @@ action:
       sequence:
         - action: climate.turn_on
           target:
-            entity_id: "{{ thermostat_entities }}"
+            entity_id: "{{ trv }}"
         - delay:
             seconds: !input action_delay
     - conditions: # winter ended
@@ -454,7 +509,7 @@ action:
       sequence:
         - action: climate.turn_off
           target:
-            entity_id: "{{ thermostat_entities }}"
+            entity_id: "{{ trv }}"
 
     - conditions: # scheduled temperature changes
         - condition: or
@@ -475,15 +530,10 @@ action:
           condition: template
           enabled: true
       sequence:
+        # just do nothing, temp is set later
         - delay:
-            seconds: !input action_delay
+            seconds: 0
           enabled: false
-        - action: climate.set_temperature
-          target:
-            entity_id: "{{ thermostat_entities }}"
-          data:
-            temperature: "{{ scheduled_temp }}"
-            hvac_mode: heat
 
     default:  # just in case I missed something
       - service: system_log.write
@@ -495,6 +545,21 @@ action:
           level: info
           logger: blueprints.march42.climate
 
-mode: parallel # run in parallel
-max: 3 # no more than 3 running at once
+  # in the end, we set the scheduled target temperature
+  - if: # only in Winter Mode
+      - condition: template
+        value_template: "{{ is_winter }}"
+    then:
+      - delay:
+          seconds: !input action_delay
+        enabled: true
+      - action: climate.set_temperature
+        target:
+          entity_id: "{{ trv }}"
+        data:
+          temperature: "{{ scheduled_temp }}"
+          hvac_mode: heat
+
+mode: queued
+max: 10 # no more than 3 running at once
 max_exceeded: warning
