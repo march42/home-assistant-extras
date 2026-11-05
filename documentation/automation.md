@@ -34,7 +34,7 @@ conditions:
     enabled: false
 ```
 
-### trigger entity_id
+#### trigger entity_id
 
 When triggered, trigger.entity_id shows which entity triggered.
 Even configured trigger on device_id shows entity_id.
@@ -53,7 +53,7 @@ variables:
   source_device: '{{ device_id(source_entity) }}'
 ```
 
-### trigger state
+#### trigger state
 
 ```yaml
 trigger: state
@@ -63,7 +63,7 @@ not_to:
   - "unavailable"
 ```
 
-### checking and counting input states
+#### checking and counting input states
 
 ```yaml
 variables:
@@ -71,7 +71,7 @@ variables:
     {{ winter_mode is none or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
 ```
 
-### ZigBee via ZHA
+#### ZigBee via ZHA
 
 ```yaml
 action: zha.set_zigbee_cluster_attribute
@@ -83,3 +83,63 @@ data:
   value: "{{ temperature_source_value * 100 | round(1) }}"
 enabled: false
 ```
+
+Jinja function call `device_attr("sensor.aussentemperatur_dew_point","identifiers")` returns `{('zha', 'bc:93:2a:ff:fe:7b:e1:d9')}`
+
+`ieee: "{{ device_attr('device_id or entity_id', 'identifiers') | selectattr(0,'eq','zha') | map(attribute=1) | first }}"`
+checks for a map where **first attribute eq zha** and filters second attribute returning the first occurance
+which is most definitely the only occurance
+
+#### Automation disabled after Home Asstistant startup
+
+```yaml
+automation:
+  - alias: "Automation disabled after Home Asstistant startup"
+    initial_state: false # disabled after Home Asstistant startup
+```
+
+## blueprint
+
+### input selector
+
+You can make a selector optional with declaring an empty default.
+However, this default needs to reflect the selectors return.
+For selector with attribute **multiple==true an empty list** `default: []` needs to be declared
+otherwise an empty entity `default:` is correct.
+If you define an selector with multiple==true and empty default the selector will not show up in the configuration.
+
+```yaml
+  input:
+    trv: # choose TRV
+      name: Radiator TRV
+      description: **NO default**, value is mandatory, selector will show
+      selector:
+        device:
+          multiple: true
+          entity:
+            - domain: climate
+    window_sensor: # contact sensor on windows or doors
+      name: (Optional) Window sensor
+      description: **empty default**, value is optional, **selector will NOT show**
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - binary_sensor
+      default: # if multiple==true an empty list would be necessary
+    persons:
+      name: (optional) Persons for presence detection
+      description: **empty list default**, value is optional, selector will show
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain:
+              - person
+              - device_tracker
+              - input_boolean
+      default: [] # if multiple==true an empty list is necessary
+```
+
+Make sure you check for **none** value in the script.
