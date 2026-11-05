@@ -143,3 +143,12 @@ If you define an selector with multiple==true and empty default the selector wil
 ```
 
 Make sure you check for **none** value in the script.
+
+## action
+
+### write ZigBee cluster attribute
+
+[ZigBee write attribute](https://www.home-assistant.io/actions/zha.set_zigbee_cluster_attribute/)
+
+```yaml
+```
