@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating
   description: |
     **heating control for Sonoff TRVZB**
-    **Version** 1.00-b08
+    **Version** 1.00-b09
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     Copyright (C) 2023-2026 Marc Hefter
@@ -358,14 +358,6 @@ variables:
     {% else %}
       {{ ts_now | int }}
     {% endif %}
-  trigger_entity: > # enumerate triggering entity
-    {% if trigger is not none and trigger.entity_id is not none %}
-      {{ trigger.entity_id }}
-    {% endif %}
-  trigger_device: > # enumerate device_id from triggering entity
-    {% if trigger is not none and trigger.entity_id is not none %}
-      {{ device_id(trigger.entity_id) }}
-    {% endif %}
 
   # TRV settings
   trv: !input trv
@@ -465,12 +457,20 @@ action:
           condition: template
         - value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew * 60 }}'
           condition: template
+        - value_template: '{{ temperature_source is not none and trigger.entity_id is not none }}'
+          condition: template
         #- value_template: > # TODO: do i need to check, if it's a SONOFF TRVZB (or TRV-ZBT or other thermostat with those functionality)
         #      {{ device_attr(device_id("climate.wohnzimmer_hkr_thermostat"),"manufacturer") == 'SONOFF'
         #        and device_attr(device_id("climate.wohnzimmer_hkr_thermostat"),"model") == 'TRVZB' }}
         #  condition: template
       sequence:
         - variables:
+            source_entity: > # the triggering temperature sensor
+              {% if trigger is not none and trigger.entity_id is not none %}
+                {{ trigger.entity_id }}
+              {% else %}
+                {{ temperature_source }}
+              {% endif %}
             target_entities: > # list of TRVZB _external_temperature_sensor_value
               {% set ns = namespace(entity_list=[]) %}
               {% for dev in trv %}
@@ -486,8 +486,8 @@ action:
               {% endfor %}
               {{ ns.entity_list }}
             temperature_value: > # convert external temperature to degree celsius
-              {% set temperature = states(trigger_entity or temperature_source) | float %}
-              {% set unit = state_attr(temperature_source, 'unit_of_measurement') %}
+              {% set temperature = states(source_entity) | float %}
+              {% set unit = state_attr(source_entity, 'unit_of_measurement') | default('°C') %}
               {{ ((temperature - 32) * 5 / 9 if unit == '°F'
                   else temperature - 273.15 if unit == 'K'
                   else temperature) | round(1) }}

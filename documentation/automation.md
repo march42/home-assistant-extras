@@ -144,7 +144,79 @@ If you define an selector with multiple==true and empty default the selector wil
 
 Make sure you check for **none** value in the script.
 
-## action
+## triggers
+
+```json
+{
+  'id': 'homeassistant_start',
+  'idx': '9',
+  'alias': 'Home Assistant startet',
+  'platform': 'homeassistant',
+  'event': 'start',
+  'description': 'Home Assistant starting'
+}
+```
+
+```yaml
+trigger:
+  id: homeassistant_shutdown
+  idx: '10'
+  alias: Home Assistant stopping
+  platform: homeassistant
+  event: shutdown
+  description: Home Assistant stopping
+```
+
+```yaml
+trigger:
+  id: external_temperature_sensor
+  idx: '0'
+  alias: Temperature on remote sensor changed
+  platform: temperature.changed
+  description: state of sensor.wozi_temperature
+  entity_id: sensor.wozi_temperature
+  from_state:
+    entity_id: sensor.wozi_temperature
+    state: '19.15'
+    attributes:
+      state_class: measurement
+      entity_id:
+        - sensor.eingangstur_temperature
+        - sensor.wohnzimmer_klima_anzeige_temperature
+      unit_of_measurement: °C
+      device_class: temperature
+      icon: mdi:calculator
+      friendly_name: Wohnzimmer Temperatur Median
+    last_changed: '2026-11-06T09:03:19.743010+00:00'
+    last_reported: '2026-11-06T09:03:19.743010+00:00'
+    last_updated: '2026-11-06T09:03:19.743010+00:00'
+    context:
+      id: 01M6R1J8NZ965WN72CARZJQS72
+      parent_id: null
+      user_id: null
+  to_state:
+    entity_id: sensor.wozi_temperature
+    state: '19.35'
+    attributes:
+      state_class: measurement
+      entity_id:
+        - sensor.eingangstur_temperature
+        - sensor.wohnzimmer_klima_anzeige_temperature
+      unit_of_measurement: °C
+      device_class: temperature
+      icon: mdi:calculator
+      friendly_name: Wohnzimmer Temperatur Median
+    last_changed: '2026-11-06T09:04:31.160368+00:00'
+    last_reported: '2026-11-06T09:04:31.160368+00:00'
+    last_updated: '2026-11-06T09:04:31.160368+00:00'
+    context:
+      id: 01M6R1MEDRZKD6X3DRRSHMEQG4
+      parent_id: null
+      user_id: null
+  for: null
+```
+
+## actions
 
 ### write ZigBee cluster attribute
 
