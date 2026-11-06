@@ -206,7 +206,7 @@ class SonoffNetworkLedSetType(types.enum8):
         unit=UnitOfElectricPotential.VOLT,
         multiplier=0.001,
         translation_key="ac_Voltage_Max_Overload",
-        device_class=NumberDeviceClass.POWER,
+        device_class=NumberDeviceClass.VOLTAGE,
         fallback_name="AC voltage max overload",
     )
     .number(
