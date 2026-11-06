@@ -14,7 +14,7 @@ from zhaquirks.clusters import CustomCluster
 
 
 """SONOFF CustomCluster specific thermostat attribute ids."""
-SONOFF_CLUSTER = 0xFC11
+#SONOFF_CLUSTER = 0xFC11 # defined in zha.zigbee.cluster_handlers.const
 
 # Child Lock, Attribute ID 0x0000, Bool
 SONOFF_CHILD_LOCK_ATTR_ID = 0x0000

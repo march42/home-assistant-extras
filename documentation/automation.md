@@ -11,15 +11,14 @@ trace:
 
 `trigger` entity for automation after triggering event
 
-```json
-{
-  'id': 'homeassistant_start',
-  'idx': '9',
-  'alias': 'Home Assistant startet',
-  'platform': 'homeassistant',
-  'event': 'start',
-  'description': 'Home Assistant starting'
-}
+```yaml
+trigger:
+  id: homeassistant_start
+  idx: '9'
+  alias: Home Assistant startet
+  platform: homeassistant
+  event: start
+  description: Home Assistant starting
 ```
 
 ```yaml
@@ -82,6 +81,10 @@ trigger:
 ```
 
 ## actions
+
+## Jinja2 templates
+
+`{{ time_since(states.sensor.wohnzimmer_klima_anzeige_temperature.last_changed) }}`
 
 ### write ZigBee cluster attribute
 
@@ -233,3 +236,5 @@ If you define an selector with multiple==true and empty default the selector wil
 ```
 
 Make sure you check for **none** value in the script.
+
+`{{ is_device_attr("a1b2c3d4e5f6a1b2c3d4e5f6", "manufacturer", "Philips") }}`
