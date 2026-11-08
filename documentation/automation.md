@@ -1,5 +1,15 @@
 ## Automation
 
+### entity states
+
+```
+  {# check if state matches string, or one of the given strings in list #}
+  {{ is_state(scheduler, ['on', 'active']) }}
+  {# expand the given list - select entities where state eq on - convert to list - count - and check if >0 #}
+  {{ window_sensor is not none and
+    expand(window_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+```
+
 ### number of traces
 
 ```yaml

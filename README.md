@@ -33,6 +33,8 @@ And i make contributions to the originating open source project, when possible a
 - (custom_zha_quirks/tp_wgzba.py) comes from [Sonoff](https://help.sonoff.tech/docs/TPWGZBA) ZHA script package
 - (custom_zha_quirks/TRV-ZBT.py) comes from [Sonoff](https://help.sonoff.tech/docs/TRVZBT) ZHA script package
 - (custom_zha_quirks/trvzb-sonoff.py) comes from [Sonoff](https://help.sonoff.tech/docs/trvzb) ZHA script package
+- (custom_zha_quirks/S60ZBTPF-sonoff.py) comes from [Sonoff](https://help.sonoff.tech/docs/s60zbtpf) ZHA script package
+  - i corrected a small typpo
 
 ## [viys](https://github.com/viys/home-assistant-blueprints)
 
