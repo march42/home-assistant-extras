@@ -80,7 +80,7 @@ blueprint:
       description: |
         Time in minutes before reverting to schedule after manually setting radiator valve.
         Set to 0, to ignore manually changed temperature.
-      default: 90
+      default: 0
       selector:
         number:
           min: 0
@@ -316,14 +316,14 @@ triggers:
     id: "scheduler_start" # scheduler switching to on
     platform: template
     value_template: >
-      {{ scheduler is not none and is_state(scheduler, 'on') }}
+      {{ scheduler is not none and is_state(scheduler, ['on', 'active']) }}
     for:
       seconds: !input event_delay
   - alias: "Scheduler switched to OFF"
     id: "scheduler_end" # scheduler switching to off
     platform: template
     value_template: >
-      {{ scheduler is not none and is_state(scheduler, 'off') }}
+      {{ scheduler is not none and is_state(scheduler, ['off', 'inactive']) }}
     for:
       seconds: !input event_delay
   - alias: "Winter mode switched to ON"
