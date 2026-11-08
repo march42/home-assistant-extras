@@ -1,10 +1,46 @@
 blueprint:
   name: Sonoff TRVZB Heating
   description: |
-    **heating control for Sonoff TRVZB**
-    **Version** 1.00-b09
+    **Heating Control for Sonoff TRVZB**
+    **Version** 1.00-b11
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
+    - sets target temperature according to configured settings
+      - eco temp for heating period
+      - comfort temp for scheduled time of day
+      - open window temp, if window opened
+      - away temp, if nobody home
+    - manual winter mode activation via `input_boolean` helper or `binary_sensor`
+    - comfort heating activation via `scheduler` or `binary_sensor`
+    - remote window contact sensors for open window detection
+    - choose `person`, `device_tracker` or `input_boolean` for somebody at home detection
+    - specific functionality for Sonoff TRVZB
+      - sets external temperature from configured remote sensor
+    - manual events
+      - HEATING_RESET_TO_SCHEDULER activate scheduled temperature on the TRVs
+      - HEATING_SET_ECO override TRVs target temperature to eco temp
+
+    temperature settings and correlations, i found to be useful
+    - open window temp 7.0°C
+      - sufficient for frost protection
+    - away temp 12-15 °C
+      - if nobody at home it doesn't bother if chilly
+      - when coming back it can take a few moments longer to heat up to temperature
+    - eco temp 15°C
+      - over night
+      - during the day, when i usually wear thicker clothes
+    - comfort temp 18°C-21°C
+      - in the evening when i want to relax
+      - free days, when i'm having a long brunchy breakfast
+    **open window temp < away temp <= eco temp <= comfort temp**
+
+    selection logic
+    1. open window temp if one or more windows opened
+    2. away temp if persons at home count == 0
+    3. comfort temp if comfort scheduler active
+    4. eco temp otherwise
+
+    **LICENSE**
     Copyright (C) 2023-2026 Marc Hefter
 
     This program is free software: you can redistribute it and/or modify
@@ -36,6 +72,9 @@ blueprint:
             - model: TRVZB
               manufacturer: SONOFF
               integration: zha # MQTT/z2m uses differend entity naming
+            - model: TRV-ZBT
+              manufacturer: SONOFF
+              integration: zha # MQTT/z2m uses differend entity naming
     manually_revert_delay:
       name: Revert from manually setting target temperature
       description: |
@@ -51,7 +90,7 @@ blueprint:
           unit_of_measurement: minutes
 
     temperature_source: # some thermometer reporting to Home Assistant
-      name: (optional) remote temperature sensor
+      name: (Optional) remote temperature sensor
       description: |
         External temperature sensor, to use for meassurement.
         If you want to use more than one sensor, create a helper to combine several sensors with arithmetic middle and use this helper as input here.
@@ -79,7 +118,7 @@ blueprint:
           unit_of_measurement: minutes
 
     winter_mode: # restrict actions to winter, to save battery on TRVZB
-      name: (optional) Winter mode
+      name: (Optional) Winter mode
       description: >
         If selected, this needs to be 'on' or 'active' to enable heating services.
       default:
@@ -100,13 +139,13 @@ blueprint:
           filter:
             - domain:
               - schedule
+              - binary_sensor
           multiple: false
       default:
     min_temp: # default value minimum temperature
-      name: Minimum Temperature
+      name: Eco Temperature
       description: >
-        Temperature, to use as minimum.
-        This is used as a default value, if Eco Temperature not specified.
+        Temperature, to use as Eco target temperature.
       default: 15
       selector:
         number:
@@ -116,10 +155,9 @@ blueprint:
           mode: slider
           unit_of_measurement: °C
     day_temp: # comfort temperature
-      name: Day Temperature
+      name: Comfort Temperature
       description: >
         Temperature, to use for active heating.
-        This is used as a default value, if Comfort Temperature not specified.
       default: 18
       selector:
         number:
@@ -169,11 +207,13 @@ blueprint:
           unit_of_measurement: °C
 
     persons:
-      name: (optional) Persons for presence detection
+      name: (Optional) Persons for presence detection
       description: |
         Persons to check present for activating comfort temperature.
         If none of the persons are detected home, the away temperature will be used instead of confort temperature.
         Instead of persons, you can use 'device_tracker' as well.
+        You can use an `input_boolean` helper e.g. `guests at home` to override detection.
+        Specifying a presence detection sensor can automate heating on room level.
         If undefined, the script will always set persons_home=-1 so it's not 0.
       selector:
         entity:
@@ -183,6 +223,7 @@ blueprint:
               - person
               - device_tracker
               - input_boolean
+              - binary_sensor
       default: []
     away_temp:
       name: Away Temperature
@@ -261,6 +302,15 @@ triggers:
   #  for:
   #    minutes: !input manually_revert_delay
   #    seconds: 13 # delay always, to ensure manually handling is done
+  # trigger: climate.target_temperature_changed
+  # target:
+  #   entity_id: climate.living_room
+  # options:
+  #   threshold:
+  #     type: above
+  #     value:
+  #       number: 22
+  #       unit_of_measurement: "°C"
 
   - alias: "Scheduler switched to ON"
     id: "scheduler_start" # scheduler switching to on
@@ -329,10 +379,14 @@ triggers:
     id: "homeassistant_start"
     platform: homeassistant
     event: start
+    enabled: false
   - alias: "Home Assistant stopping"
     id: "homeassistant_shutdown"
     platform: homeassistant
     event: shutdown
+    enabled: false
+
+  # manual events for remote controlling from other automations
   - alias: "Manual event HEATING_***"
     id: "manual_event"
     platform: event
@@ -340,7 +394,21 @@ triggers:
       - "HEATING_RESET_TO_SCHEDULER"
       - "HEATING_SET_ECO"
 
-conditions: []
+conditions: # TODO: only execute if necessary
+  - condition: or
+    conditions:
+      - value_template: '{{ is_winter }}' # execute during winter
+        condition: template
+        enabled: false
+      - id: 'winter_end' # winter ending is necessary, is_winter is now false
+        condition: trigger
+        enabled: false
+      - id: 'winter_start' # maybe winter starting is unnecessary, because is_winter is now true
+        condition: trigger
+        enabled: false
+      - value_template: "{{ trigger is not none and trigger.id == 'manual_event' }}"
+        condition: template
+        enabled: false
 
 trigger_variables:
   winter_mode: !input winter_mode
@@ -412,30 +480,22 @@ variables:
   scheduled_preset: >
     {% if windows_opened > 0 %}
       opened
+    {% elif persons_home == 0 %}
+      away
+    {% elif is_comfort %}
+      comfort
     {% else %}
-      {% if is_comfort %}
-        {% if persons_home == 0 %}
-          away
-        {% else %}
-          comfort
-        {% endif %}
-      {% else %}
-        eco
-      {% endif %}
+      eco
     {% endif %}
   scheduled_temp: >
     {% if windows_opened > 0 %}
       {{ opened_temp }}
+    {% elif persons_home == 0 %}
+      {{ away_temp }}
+    {% elif is_comfort %}
+      {{ comfort_temp }}
     {% else %}
-      {% if is_comfort %}
-        {% if persons_home == 0 %}
-          {{ away_temp }}
-        {% else %}
-          {{ comfort_temp }}
-        {% endif %}
-      {% else %}
-        {{ eco_temp }}
-      {% endif %}
+      {{ eco_temp }}
     {% endif %}
 
   # manual event
@@ -471,7 +531,7 @@ action:
               {% else %}
                 {{ temperature_source }}
               {% endif %}
-            target_entities: > # list of TRVZB _external_temperature_sensor_value
+            target_entities: > # list of external_temperature_sensor_value entities (if enabled at TRV)
               {% set ns = namespace(entity_list=[]) %}
               {% for dev in trv %}
                 {% set sensor_value = (device_entities(dev) or [])
@@ -502,7 +562,7 @@ action:
                   attribute: 0x600D
                   value: "{{ temperature_value * 100 | round(1) }}"
                 enabled: false
-        - action: number.set_value
+        - action: number.set_value # setting the entities works with multiple TRVs and maybe other devices as well
           target:
             entity_id: "{{ target_entities }}"
           data:
@@ -532,6 +592,7 @@ action:
             entity_id: "{{ thermostat_entities }}"
         - delay:
             seconds: !input action_delay
+        # the target temperature will be set later
     - conditions: # winter ended
         - id: 'winter_end'
           condition: trigger
@@ -539,7 +600,7 @@ action:
         - action: climate.turn_off
           target:
             entity_id: "{{ thermostat_entities }}"
-        - stop: "stop after turning off TRV"
+        - stop: "stop after turning off TRV when winter started"
 
     - conditions: # target temperature changes
         - value_template: '{{ is_winter }}'
