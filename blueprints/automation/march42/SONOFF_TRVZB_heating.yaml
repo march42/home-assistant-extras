@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.00-b13
+    **Version** 2.01-b14
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -84,215 +84,247 @@ blueprint:
           mode: slider
           unit_of_measurement: minutes
 
-    temperature_source: # some thermometer reporting to Home Assistant
-      name: (Optional) remote temperature sensor
+    section_remote_sensor: # remote temperature sensor settings
+      name: Remote Temperature Sensor
       description: |
-        External temperature sensor, to use for meassurement.
-        If you want to use more than one sensor, create a helper to combine several sensors with arithmetic middle and use this helper as input here.
-        The target TRVZB's own temperature is not considered a valid source.
-      default:
-      selector:
-        entity:
-          filter:
-            domain: sensor
-            device_class: temperature
-    temperature_source_deskew: # time in minutes, between changes
-      name: Deskew temperature changes
+        If `Remote temperature sensor` is configured, it will be watched for temperature changes.
+        The changes will be ignored, if triggered within configured deskew time period.
+        The changed temperature value is written to the TRVs
+        `external_temperature_sensor_value` value attribute
+        if the TRVs `external_temperature_sensor` setting is activated.
+      input:
+        temperature_source: # some thermometer reporting to Home Assistant
+          name: (Optional) remote temperature sensor
+          description: |
+            External temperature sensor, to use for meassurement.
+            If you want to use more than one sensor, create a helper to combine several sensors with arithmetic mean and use this helper as input here.
+            The target TRVZB's own temperature is not considered a valid source.
+          default:
+          selector:
+            entity:
+              filter:
+                domain: sensor
+                device_class: temperature
+        temperature_source_deskew: # time in minutes, between changes
+          name: Deskew temperature changes
+          description: |
+            Time in minutes to filter glitches. Setting to 0 will disable this filter.
+            Temperature changes from remote sensor will be ignored, if triggered within this time period.
+            This saves battery life of the TRV, by not sending changes too rapidly.
+            Rapid changes of temperature, e.g. when opening window, will be missed or misinterpreted.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 60
+              step: 1
+              mode: slider
+              unit_of_measurement: minutes
+
+    section_temperature: # target temperature settings
+      name: Target Temperature Settings
       description: |
-        Time in minutes to filter glitches. Setting to 0 will disable this filter.
-        Temperature changes from remote sensor will be ignored, if triggered within this time period.
-        This saves battery life of the TRV, by not sending changes too rapidly.
-        Rapid changes of temperature, e.g. when opening window, will be missed or misinterpreted.
-      default: 0
-      selector:
-        number:
-          min: 0
-          max: 60
-          step: 1
-          mode: slider
-          unit_of_measurement: minutes
+        Settings for winter mode, target temperature and comfort temperature schedule.
+      input:
+        winter_mode: # restrict actions to winter, to save battery on TRVZB
+          name: (Optional) Winter mode
+          description: >
+            If selected, this needs to be 'on' or 'active' to enable heating services.
+            `Winter mode` saving resources disabling setting the TRV during summer,
+            when heating services are not needed.
+          default:
+          selector:
+            entity:
+              filter:
+                - domain:
+                  - input_boolean
+                  - binary_sensor
+              multiple: false
+        scheduler: # scheduler helper, to activate comfort temperature
+          name: (Optional) Scheduler for comfort temperature
+          description: >
+            Scheduler to specify times, to activate comfort or away temperature.
+            While 'off', eco temperature will be used.
+          selector:
+            entity:
+              filter:
+                - domain:
+                  - schedule
+                  - binary_sensor
+              multiple: false
+          default:
+        min_temp: # default value minimum temperature
+          name: Eco Temperature
+          description: >
+            Temperature, to use as Eco target temperature.
+          default: 15
+          selector:
+            number:
+              min: 5.0
+              max: 25.0
+              step: 0.5
+              mode: slider
+              unit_of_measurement: °C
+        day_temp: # comfort temperature
+          name: Comfort Temperature
+          description: >
+            Temperature, to use for active heating.
+          default: 18
+          selector:
+            number:
+              min: 5.0
+              max: 25.0
+              step: 0.5
+              mode: slider
+              unit_of_measurement: °C
 
-    winter_mode: # restrict actions to winter, to save battery on TRVZB
-      name: (Optional) Winter mode
-      description: >
-        If selected, this needs to be 'on' or 'active' to enable heating services.
-      default:
-      selector:
-        entity:
-          filter:
-            - domain:
-              - input_boolean
-              - binary_sensor
-          multiple: false
-    scheduler: # scheduler helper, to activate comfort temperature
-      name: (Optional) Scheduler for comfort temperature
-      description: >
-        Scheduler to specify times, to activate comfort or away temperature.
-        While 'off', eco temperature will be used.
-      selector:
-        entity:
-          filter:
-            - domain:
-              - schedule
-              - binary_sensor
-          multiple: false
-      default:
-    min_temp: # default value minimum temperature
-      name: Eco Temperature
-      description: >
-        Temperature, to use as Eco target temperature.
-      default: 15
-      selector:
-        number:
-          min: 5.0
-          max: 25.0
-          step: 0.5
-          mode: slider
-          unit_of_measurement: °C
-    day_temp: # comfort temperature
-      name: Comfort Temperature
-      description: >
-        Temperature, to use for active heating.
-      default: 18
-      selector:
-        number:
-          min: 5.0
-          max: 25.0
-          step: 0.5
-          mode: slider
-          unit_of_measurement: °C
-
-    window_sensor: # contact sensor on windows or doors
-      name: (Optional) Window sensor
+    section_opened_window: # opened window detection settings
+      name: Opened Window Detection
       description: |
-        Window opened sensor or group of sensors, to check.
-        If 'on' the window is considered opened.
-        If window stays opened beyond delay, to target temperature will be set accordingly.
-      selector:
-        entity:
-          multiple: true
-          filter:
-            - domain:
-              - binary_sensor
-      default: [] # list is necessary for multiple==true
-    windowopened_delay:
-      name: Delay window opened
-      description: >
-        Time in minutes window needs to be opened, before acting.
-      default: 3 # it takes some time to cool down a room
-      selector:
-        number:
-          min: 0
-          max: 9
-          step: 1
-          mode: slider
-          unit_of_measurement: minutes
-    opened_temp:
-      name: Opened Window Temperature
-      description: >
-        Temperature, to use if window gets opened.
-        Should still ensure frost protection.
-      default: 7.0 # minimum frost protection
-      selector:
-        number:
-          min: 5.0
-          max: 25.0
-          step: 0.5
-          mode: slider
-          unit_of_measurement: °C
+        Settings for opened window detection.
+      input:
+        window_sensor: # contact sensor on windows or doors
+          name: (Optional) Window sensor
+          description: |
+            Window opened sensor or group of sensors, to check.
+            If 'on' the window is considered opened.
+            If window stays opened beyond delay, to target temperature will be set accordingly.
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain:
+                  - binary_sensor
+          default: [] # list is necessary for multiple==true
+        windowopened_delay:
+          name: Delay window opened
+          description: >
+            Time in minutes window needs to be opened, before acting.
+          default: 3 # it takes some time to cool down a room
+          selector:
+            number:
+              min: 0
+              max: 9
+              step: 1
+              mode: slider
+              unit_of_measurement: minutes
+        opened_temp:
+          name: Opened Window Temperature
+          description: >
+            Temperature, to use if window gets opened.
+            Should still ensure frost protection.
+          default: 7.0 # minimum frost protection
+          selector:
+            number:
+              min: 5.0
+              max: 25.0
+              step: 0.5
+              mode: slider
+              unit_of_measurement: °C
 
-    persons:
-      name: (Optional) Persons for presence detection
+    section_presence: # presence detection settings
+      name: Presence Detection
       description: |
-        Persons to check present for activating comfort temperature.
-        If none of the persons are detected home, the away temperature will be used instead of confort temperature.
-        Instead of persons, you can use 'device_tracker' as well.
-        You can use an `input_boolean` helper e.g. `guests at home` to override detection.
-        Specifying a presence detection sensor can automate heating on room level.
-        If undefined, the script will always set persons_home=-1 so it's not 0.
-      selector:
-        entity:
-          multiple: true
-          filter:
-            - domain:
-              - person
-              - device_tracker
-              - input_boolean
-              - binary_sensor
-      default: []
-    away_temp:
-      name: Away Temperature
-      description: >
-        Temperature, to use if no one is at home.
-        Setting this too low, will lead to extra long heating when coming back home.
-      default: 12.0 # prevent the room furnishings from chilling too much
-      selector:
-        number:
-          min: 5.0
-          max: 25.0
-          step: 0.5
-          mode: slider
-          unit_of_measurement: °C
-    nobodyhome_delay:
-      name: Delay nobody home
-      description: >
-        Time in minutes before acting on no persons home.
-        After this delay the TRVs will be set to corresponding target temperature.
-      default: 3 # gives you some time, to get your mail
-      selector:
-        number:
-          min: 0
-          max: 99
-          step: 1
-          mode: slider
-          unit_of_measurement: minutes
+        Settings for presence detection.
+      input:
+        persons:
+          name: (Optional) Persons for presence detection
+          description: |
+            Persons to check present for activating comfort temperature.
+            If none of the persons are detected home, the away temperature will be used instead of confort temperature.
+            Instead of persons, you can use 'device_tracker' as well.
+            You can use an `input_boolean` helper e.g. `guests at home` to override detection.
+            Specifying a presence detection sensor can automate heating on room level.
+            If undefined, the script will always set persons_home=-1 so it's not 0.
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain:
+                  - person
+                  - device_tracker
+                  - input_boolean
+                  - binary_sensor
+          default: []
+        away_temp:
+          name: Away Temperature
+          description: >
+            Temperature, to use if no one is at home.
+            Setting this too low, will lead to extra long heating when coming back home.
+          default: 12.0 # prevent the room furnishings from chilling too much
+          selector:
+            number:
+              min: 5.0
+              max: 25.0
+              step: 0.5
+              mode: slider
+              unit_of_measurement: °C
+        nobodyhome_delay:
+          name: Delay nobody home
+          description: >
+            Time in minutes before acting on no persons home.
+            After this delay the TRVs will be set to corresponding target temperature.
+          default: 3 # gives you some time, to get your mail
+          selector:
+            number:
+              min: 0
+              max: 99
+              step: 1
+              mode: slider
+              unit_of_measurement: minutes
 
-    event_delay: # delaying event trigger to filter glitches
-      name: Delay Event
-      description: >
-        Time in seconds changes needs to be active, before acting.
-        This will delay the triggered event and filter glitches.
-      default: 2
-      selector:
-        number:
-          min: 0
-          max: 30
-          step: 1
-          mode: slider
-          unit_of_measurement: seconds
-    action_delay: # delay between actions, to ensure components have time to get ready again
-      name: Delay Actions
-      description: >
-        Time in seconds delaying between subsequent actions.
-        To ensure the components are ready again.
-      default: 0.2 # who knows, this should be unnecessary
-      selector:
-        number:
-          min: 0.0
-          max: 9.0
-          step: 0.2
-          mode: slider
-          unit_of_measurement: seconds
+    section_fine_tuning: # fine tuning
+      name: Fine Tuning
+      description: |
+        Setting fine tuning script behaviour.
+      input:
 
-    enable_min_max_correct: # correct min_temp and max_temp to fit target_temp
-      name: Enable Min/Max correct
-      description: >
-        Try to correct the `min_temp` and `max_temp` settings.
-        Will not work on all TRVs.
-        The TRV needs to expose min_heat_setpoint_limit and max_heat_setpoint_limit attributes.
-      default: false
-      selector:
-        boolean:
-    enable_winter_set: # set winter mode on manual events HEATING_WINTER_START and HEATING_WINTER_STOPP
-      name: Enable winter mode toggle
-      description: >
-        Try to turn on and off choosen winter mode.
-        If you use input_boolean helper.
-        HEATING_WINTER_START will lead to turn_on
-        HEATING_WINTER_STOPP will lead to turn_off
-      default: false
-      selector:
-        boolean:
+        event_delay: # delaying event trigger to filter glitches
+          name: Delay Event
+          description: >
+            Time in seconds changes needs to be active, before acting.
+            This will delay the triggered event and filter glitches.
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 30
+              step: 1
+              mode: slider
+              unit_of_measurement: seconds
+        action_delay: # delay between actions, to ensure components have time to get ready again
+          name: Delay Actions
+          description: >
+            Time in seconds delaying between subsequent actions.
+            To ensure the components are ready again.
+          default: 0.2 # who knows, this should be unnecessary
+          selector:
+            number:
+              min: 0.0
+              max: 9.0
+              step: 0.2
+              mode: slider
+              unit_of_measurement: seconds
+
+        enable_min_max_correct: # correct min_temp and max_temp to fit target_temp
+          name: Enable Min/Max correct
+          description: >
+            Try to correct the `min_temp` and `max_temp` settings.
+            Will not work on all TRVs.
+            The TRV needs to expose min_heat_setpoint_limit and max_heat_setpoint_limit attributes.
+          default: false
+          selector:
+            boolean:
+        enable_winter_set: # set winter mode on manual events HEATING_WINTER_START and HEATING_WINTER_STOPP
+          name: Enable winter mode toggle
+          description: >
+            Try to turn on and off choosen winter mode.
+            If you use input_boolean helper.
+            HEATING_WINTER_START will lead to turn_on
+            HEATING_WINTER_STOPP will lead to turn_off
+          default: false
+          selector:
+            boolean:
 
 triggers:
   # trigger on temperature change from external sensor

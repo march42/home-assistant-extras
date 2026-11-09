@@ -3,6 +3,31 @@
 This blueprint is designed and developed for the Sonoff TRVZB thermostatic radiator valve.
 It should work with the Sonoff TRV-ZBT well, yet i didn't test this.
 
+Starting with version 2.00 the TRV can be selected from domain climate.
+This opens the opportunity to control other TRVs as well.
+Specific Sonoff TRVZB functionality will most probably not function.
+
+### Functions
+
+    - sets target temperature according to configured settings
+      - eco temp for heating period
+      - comfort temp for scheduled time of day
+      - open window temp, if window opened
+      - away temp, if nobody home
+    - manual winter mode activation via `input_boolean` helper or `binary_sensor`
+    - comfort heating activation via `scheduler` or `binary_sensor`
+    - remote window contact sensors for open window detection
+    - choose `person`, `device_tracker` or `input_boolean` for somebody at home detection
+    - revert to scheduled temp, after target temp was changed manually
+    - specific functionality for Sonoff TRVZB
+      - sets external temperature from configured remote sensor
+      - if target_temp out of range, set min_temp and max_temp if supported
+    - manual events
+      - HEATING_RESET_TO_SCHEDULER activate scheduled temperature on the TRVs
+      - HEATING_SET_ECO override TRVs target temperature to eco temp
+      - manual event HEATING_WINTER_START, setting winter mode via turn_on
+      - manual event HEATING_WINTER_STOPP, setting winter mode via turn_off
+
 ### Setting up
 
 1. ensure your [Home Assiatant](https://home-assistant.io/) instance is compatible and prepared
@@ -62,23 +87,8 @@ It should work with the Sonoff TRV-ZBT well, yet i didn't test this.
     - select one or more TRV and configure the corresponding settings
     - save your automation, name it and assign appropriate category and area
 
-### Functions
+### Configuration settings
 
-    - sets target temperature according to configured settings
-      - eco temp for heating period
-      - comfort temp for scheduled time of day
-      - open window temp, if window opened
-      - away temp, if nobody home
-    - manual winter mode activation via `input_boolean` helper or `binary_sensor`
-    - comfort heating activation via `scheduler` or `binary_sensor`
-    - remote window contact sensors for open window detection
-    - choose `person`, `device_tracker` or `input_boolean` for somebody at home detection
-    - revert to scheduled temp, after target temp was changed manually
-    - specific functionality for Sonoff TRVZB
-      - sets external temperature from configured remote sensor
-    - manual events
-      - HEATING_RESET_TO_SCHEDULER activate scheduled temperature on the TRVs
-      - HEATING_SET_ECO override TRVs target temperature to eco temp
 
 ### Winter mode
 
@@ -195,6 +205,12 @@ More time should be considered, when using presence sensors.
 ### Changelog
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+
+#### Version 2.01-b14
+
+##### added
+
+- input sections structuring configuration settings
 
 #### Version 2.00
 
