@@ -179,8 +179,10 @@ More time should be considered, when using presence sensors.
 
 ### Events consumed
 
-- "HEATING_RESET_TO_SCHEDULER"
-- "HEATING_SET_ECO"
+- HEATING_RESET_TO_SCHEDULER
+- HEATING_SET_ECO
+- HEATING_WINTER_START
+- HEATING_WINTER_STOPP
 
 - Winter mode activating and deactivating
 - Window opening and closing
@@ -189,3 +191,61 @@ More time should be considered, when using presence sensors.
 
 - Temperature changed on remote sensor
 - Target temperature changed on TRV
+
+### Changelog
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+
+#### Version 2.00
+
+##### breaking changes
+
+- selector TRV switched from device_id to entity_id and renamed from trv to input_trv
+- selector TRV filtering on domain climate, instead of Sonoff TRVZB and TRV-ZBT
+
+##### added
+
+- input enable_winter_set
+- manual event HEATING_WINTER_START, setting winter mode via turn_on
+- manual event HEATING_WINTER_STOPP, setting winter mode via turn_off
+- input enable_min_max_correct
+- if target_temp out of range, set min_temp and max_temp if supported
+
+#### Version 1.00
+
+##### breaking changes
+
+- enumerating scheduled_temp changed
+- changed running mode to queued, was parallel
+- setting target temperature when winter mode is on or manual event running
+- temperature_source_deskew changed to minutes, was seconds
+- requirement Home Assistant min_version: "2024.10.0"
+
+##### added
+
+- blueprint conditions added
+- selector for TRV, filtering Sonoff TRVZB and TRV-ZBT connected via ZHA
+- Revert from manually setting target temperature (wip)
+- selector added domain binary_sensor to triggering entities
+- handling of temperature changed on remote sensor
+- platform event homeassistant_start
+- platform event homeassistant_shutdown
+- manual event HEATING_SET_ECO
+- manual event HEATING_RESET_TO_SCHEDULER
+
+#### pre release
+
+- selector for device TRVZB, filtering Sonoff TRVZB connected via ZHA
+- remote temperature sensor
+- input winter mode
+- input scheduler for comfort temperature
+- input min_temp for eco temperature
+- input day_temp for comfort temperature
+- input window sensor for opening detection
+- input windowopened_delay
+- input opened_temp for temperature when window opened
+- input persons for presence detection
+- input away_temp for temperature when nobody home
+- input nobodyhome_delay
+- input event_delay
+- input action_delay
