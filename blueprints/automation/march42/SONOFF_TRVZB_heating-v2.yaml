@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.00-b12
+    **Version** 2.00-b13
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -274,6 +274,26 @@ blueprint:
           mode: slider
           unit_of_measurement: seconds
 
+    enable_min_max_correct: # correct min_temp and max_temp to fit target_temp
+      name: Enable Min/Max correct
+      description: >
+        Try to correct the `min_temp` and `max_temp` settings.
+        Will not work on all TRVs.
+        The TRV needs to expose min_heat_setpoint_limit and max_heat_setpoint_limit attributes.
+      default: false
+      selector:
+        boolean:
+    enable_winter_set: # set winter mode on manual events HEATING_WINTER_START and HEATING_WINTER_STOPP
+      name: Enable winter mode toggle
+      description: >
+        Try to turn on and off choosen winter mode.
+        If you use input_boolean helper.
+        HEATING_WINTER_START will lead to turn_on
+        HEATING_WINTER_STOPP will lead to turn_off
+      default: false
+      selector:
+        boolean:
+
 triggers:
   # trigger on temperature change from external sensor
   - alias: "Temperature on remote sensor changed"
@@ -424,10 +444,7 @@ variables:
       | selectattr("state", "ne", ["unavailable", "unknown"])
       | map(attribute="entity_id") | list }}
   manually_revert_delay: !input manually_revert_delay
-  TRV_manual_override: > # changed temperature on TRV
-    {{ manually_revert_delay != 0
-      and trigger is not none and trigger.id == 'TRV_temp_changed'
-      and trigger.entity is not none and state_attr(trigger.entity,"temperature") != scheduled_temp }}
+  enable_min_max_correct: !input enable_min_max_correct
 
   # synching external temperature source
   temperature_source: !input temperature_source
@@ -546,7 +563,10 @@ action:
         - if: # ignore determined changes
             - condition: template
               value_template: > # if TRV_manual_override
-                {{ TRV_manual_override }}
+                {{ manually_revert_delay != 0
+                  and trigger is not none and trigger.id == 'TRV_temp_changed'
+                  and trigger.entity_id is not none
+                  and state_attr(trigger.entity_id,"temperature") | float != scheduled_temp }}
           then:
             - delay: # just do nothing, TODO: is there a BREAK action
                 seconds: 0
@@ -554,6 +574,16 @@ action:
           else:
             - stop: "ignore, not manually changed or manually_revert_delay == 0"
 
+    - conditions: # winter starting
+        - id: 'HEATING_WINTER_START'
+          condition: trigger
+      sequence:
+        - action: homeassistant.turn_on
+          target:
+            entity_id: !input winter_mode
+          data: {}
+          enabled: !input enable_winter_set
+        - stop: "stop, after activating winter mode"
     - conditions: # winter started
         - id: 'winter_start'
           condition: trigger
@@ -564,6 +594,16 @@ action:
         - delay:
             seconds: !input action_delay
         # the target temperature will be set later
+    - conditions: # winter stopping
+        - id: 'HEATING_WINTER_STOPP'
+          condition: trigger
+      sequence:
+        - action: homeassistant.turn_off
+          target:
+            entity_id: !input winter_mode
+          data: {}
+          enabled: !input enable_winter_set
+        - stop: "stop, after deactivating winter mode"
     - conditions: # winter ended
         - id: 'winter_end'
           condition: trigger
@@ -655,13 +695,15 @@ action:
           entity_id: "{{ minimum_entities }}"
         data:
           value: "{{ target_temp }}"
+        enabled: !input enable_min_max_correct
       - action: number.set_value # setting the min and max if necessary
         target:
           entity_id: "{{ maximum_entities }}"
         data:
           value: "{{ target_temp }}"
+        enabled: !input enable_min_max_correct
       # now, the delay between actions
-      - delay:
+      - delay: # action_delay
           seconds: !input action_delay
         enabled: true
       # finally set the target temperature
@@ -673,5 +715,5 @@ action:
           hvac_mode: heat
 
 mode: queued
-max: 3 # no more than 3 running at once
+max: 5
 max_exceeded: warning
