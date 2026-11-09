@@ -382,21 +382,23 @@ triggers:
       - "HEATING_WINTER_START"
       - "HEATING_WINTER_STOPP"
 
-conditions: # TODO: only execute if necessary
-  - condition: or
-    conditions:
-      - value_template: '{{ is_winter }}' # execute during winter
-        condition: template
-        enabled: false
-      - id: 'winter_end' # winter ending is necessary, is_winter is now false
-        condition: trigger
-        enabled: false
-      - id: 'winter_start' # maybe winter starting is unnecessary, because is_winter is now true
-        condition: trigger
-        enabled: false
-      - id: 'manual_event' # allways run for manual events
-        condition: trigger
-        enabled: false
+conditions: [] # TODO: only execute if necessary
+  #- condition: or
+  #  conditions:
+  #    - value_template: > # execute during winter
+  #        {{ winter_mode is none
+  #          or expand(winter_mode) | selectattr('state', 'in', ['on', 'active']) | list | count > 0 }}
+  #      condition: template
+  #      enabled: false
+  #    - id: 'winter_end' # winter ending is necessary, is_winter is now false
+  #      condition: trigger
+  #      enabled: false
+  #    - id: 'winter_start' # maybe winter starting is unnecessary, because is_winter is now true
+  #      condition: trigger
+  #      enabled: false
+  #    - id: 'manual_event' # allways run for manual events
+  #      condition: trigger
+  #      enabled: false
 
 trigger_variables:
   winter_mode: !input winter_mode
@@ -621,9 +623,48 @@ action:
             {% else %}
               {{ scheduled_temp }}
             {% endif %}
+          minimum_entities: > # list of min_temp entities blocking change
+            {# number.badezimmer_hkr_min_heat_setpoint_limit #}
+            {% set ns = namespace(entity_list=[]) %}
+            {% for trv in input_trv %}
+              {% set dev = device_id(trv) %}
+              {% set number_value = (device_entities(dev) or [])
+                | select('match', '^number\\..*_min_heat_setpoint_limit$')
+                | list | first | default('', true) %}
+              {% if target_temp < states(number_value) | float(0.0) %}
+                {% set ns.entity_list = ns.entity_list + [number_value] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.entity_list }}
+          maximum_entities: > # list of max_temp entities blocking change
+            {# number.badezimmer_hkr_max_heat_setpoint_limit #}
+            {% set ns = namespace(entity_list=[]) %}
+            {% for trv in input_trv %}
+              {% set dev = device_id(trv) %}
+              {% set number_value = (device_entities(dev) or [])
+                | select('match', '^number\\..*_max_heat_setpoint_limit$')
+                | list | first | default('', true) %}
+              {% if target_temp > states(number_value) | float(30.0) %}
+                {% set ns.entity_list = ns.entity_list + [number_value] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.entity_list }}
+      # prevent [Error: Provided temperature 7.0 is not valid. Accepted range is 12.0 to 25.0]
+      - action: number.set_value # setting the min and max if necessary
+        target:
+          entity_id: "{{ minimum_entities }}"
+        data:
+          value: "{{ target_temp }}"
+      - action: number.set_value # setting the min and max if necessary
+        target:
+          entity_id: "{{ maximum_entities }}"
+        data:
+          value: "{{ target_temp }}"
+      # now, the delay between actions
       - delay:
           seconds: !input action_delay
         enabled: true
+      # finally set the target temperature
       - action: climate.set_temperature
         target:
           entity_id: "{{ thermostat_entities }}"
