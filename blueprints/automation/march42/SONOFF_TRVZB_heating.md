@@ -150,7 +150,48 @@ Attributes were added to the quirk on 2025-04-30.
 As long as your TRV provides the attributes mentioned above
 this function should work as well.
 
-**TODO**:
+#### setting external_temperature_sensor_value
+
+First the code and afterwards i will explain the details.
+
+```
+target_entities: > # list of external_temperature_sensor_value entities (if enabled at TRV)
+  {% set ns = namespace(entity_list=[]) %}
+  {% for trv in input_trv %}
+    {% set dev = device_id(trv) %}
+    {% set sensor_value = (device_entities(dev) or [])
+      | select('match', '^number\\..*_external_temperature_sensor_value$')
+      | list | first | default('', true) %}
+    {% set sensor_active = (device_entities(dev) or [])
+      | select('match', '^switch\\..*_external_temperature_sensor$')
+      | list | first | default('', true) %}
+    {% if is_state(sensor_active,'on') %}
+      {% set ns.entity_list = ns.entity_list + [sensor_value] %}
+    {% endif %}
+  {% endfor %}
+  {{ ns.entity_list }}
+```
+
+1. the namespace creation is necessary, otherwise the variable would be cleared at every loop iteration
+2. loop through every trv from list input_trv
+3. get device_id from trv
+4. get the sensor_value entity from the device
+    by selecting all named **number.** * **_external_temperature_sensor_value**
+    converting to list, selecting the first, if none default is ''
+5. get the sensor_active entity from the device
+    by selecting all named **number.** * **_external_temperature_sensor**
+    converting to list, selecting the first, if none default is ''
+6. if sensor_active has state on
+7. add sensor_value entity to entity_list
+8. return entity_list
+
+**IDEA**:
+Other TRVs don't have those functionality and entities.
+The returned target_entities list will only contain those TRVs
+supporting remote sensor values and have the feature enabled.
+
+#### **TODO**:
+
 For TRV without the remote sensor attributes and with temperature_calibration attribute
 we could calculate the current calibration value
 from difference between the local and the remote temperature.
@@ -217,8 +258,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ##### added
 
-- Home Assistant system events (v2.02-b15)
-- input sections structuring configuration settings (v2.01-b14)
+- transfer target_temp (v2.03)
+- Home Assistant system events (v2.02)
+- input sections structuring configuration settings (v2.01)
 
 #### Version 2.00
 

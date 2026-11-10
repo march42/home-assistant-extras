@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.02-b15
+    **Version** 2.02-b16
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -83,6 +83,15 @@ blueprint:
           step: 1
           mode: slider
           unit_of_measurement: minutes
+    enable_transfer_temp: # transfer target_temp to other TRVs in selection
+      name: Enable transfer target temperature
+      description: >
+        Transfer manually choosen target temperature to other TRVs.
+        Changing the target temp at one of the TRVs will lead to
+        transfering this temp to the others as well.
+      default: false
+      selector:
+        boolean:
 
     section_remote_sensor: # remote temperature sensor settings
       name: Remote Temperature Sensor
@@ -580,7 +589,7 @@ action:
                   | list | first | default('', true) %}
                 {% set sensor_active = (device_entities(dev) or [])
                   | select('match', '^switch\\..*_external_temperature_sensor$')
-                  | list | first | default(false, true) %}
+                  | list | first | default('', true) %}
                 {% if is_state(sensor_active,'on') %}
                   {% set ns.entity_list = ns.entity_list + [sensor_value] %}
                 {% endif %}
@@ -588,7 +597,7 @@ action:
               {{ ns.entity_list }}
             temperature_value: > # convert external temperature to degree celsius
               {% set temperature = states(source_entity) | float %}
-              {% set unit = state_attr(source_entity, 'unit_of_measurement') | default('°C') %}
+              {% set unit = state_attr(source_entity, 'unit_of_measurement') | default('°C',true) %}
               {{ ((temperature - 32) * 5 / 9 if unit == '°F'
                   else temperature - 273.15 if unit == 'K'
                   else temperature) | round(1) }}
