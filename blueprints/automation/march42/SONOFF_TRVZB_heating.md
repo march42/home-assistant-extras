@@ -258,7 +258,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ##### added
 
-- transfer target_temp (v2.03)
+- transfer target temp (v2.03)
 - Home Assistant system events (v2.02)
 - input sections structuring configuration settings (v2.01)
 

@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.02-b16
+    **Version** 2.03-b16
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -355,8 +355,8 @@ triggers:
     options:
       threshold:
         type: any
-  - alias: "Target temperature on TRV changed"
-    id: 'TRV_temp_changed'
+  - alias: "Revert target temperature on TRV"
+    id: 'TRV_temp_revert'
     platform: state # temperature setting changed
     entity_id: !input input_trv
     attribute: temperature
@@ -366,6 +366,18 @@ triggers:
       - "unavailable"
     for:
       minutes: !input manually_revert_delay
+      seconds: 13 # delay always, to ensure manually handling is done
+  - alias: "Transfer target temperature on TRV"
+    id: 'TRV_temp_transfer'
+    platform: state # temperature setting changed
+    entity_id: !input input_trv
+    enabled: !input enable_transfer_temp
+    attribute: temperature
+    #not_to: {{ scheduled_temp }} # unluckily this is not working
+    not_to:
+      - "unknown"
+      - "unavailable"
+    for:
       seconds: 13 # delay always, to ensure manually handling is done
 
   - alias: "Scheduler switched to ON"
@@ -494,6 +506,7 @@ variables:
       | selectattr("state", "ne", ["unavailable", "unknown"])
       | map(attribute="entity_id") | list }}
   manually_revert_delay: !input manually_revert_delay
+  enable_transfer_temp: !input enable_transfer_temp
   enable_min_max_correct: !input enable_min_max_correct
 
   # synching external temperature source
@@ -549,6 +562,7 @@ variables:
     {% else %}
       {{ eco_temp }}
     {% endif %}
+  #override_temp: "{{ none }}"
 
   # manual event
   is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
@@ -607,15 +621,15 @@ action:
           data:
             value: "{{ temperature_value }}"
         - stop: "_external_temperature_sensor_value set"
-    - conditions: # temperature on TRV changed
-        - condition: trigger
-          id: 'TRV_temp_changed'
+    - conditions: # revert temperature on TRV
+        - id: 'TRV_temp_revert'
+          condition: trigger
       sequence:
         - if: # ignore determined changes
             - condition: template
               value_template: > # if TRV_manual_override
                 {{ manually_revert_delay != 0
-                  and trigger is not none and trigger.id == 'TRV_temp_changed'
+                  and trigger is not none and trigger.id == 'TRV_temp_revert'
                   and trigger.entity_id is not none
                   and state_attr(trigger.entity_id,"temperature") | float != scheduled_temp }}
           then:
@@ -664,24 +678,6 @@ action:
             entity_id: "{{ thermostat_entities }}"
         - stop: "stop after turning off TRV when winter started"
 
-    ### removed... now continues to temperature setting
-    #- conditions: # home assistant starting
-    #    - condition: trigger
-    #      id: 'homeassistant_start'
-    #  sequence:
-    #    - event: HEATING_RESET_TO_SCHEDULER
-    #      event_data:
-    #        reason: homeassistant_start
-    #    - stop: "homeassistant_start triggered HEATING_RESET_TO_SCHEDULER"
-    #- conditions: # home assistant shutting down
-    #    - condition: trigger
-    #      id: 'homeassistant_shutdown'
-    #  sequence:
-    #    - event: HEATING_SET_ECO
-    #      event_data:
-    #        reason: homeassistant_shutdown
-    #    - stop: "homeassistant_shutdown triggered HEATING_SET_ECO"
-
     - conditions: # continue to set target temperature
         - value_template: '{{ is_winter }}'
           condition: template
@@ -708,7 +704,27 @@ action:
               condition: trigger
             - id: 'homeassistant_shutdown'
               condition: trigger
+            - id: 'TRV_temp_transfer'
+              condition: trigger
       sequence:
+        - if: # HEATING_SET_ECO or homeassistant_shutdown
+            - condition: template
+              value_template: > # HEATING_SET_ECO or homeassistant_shutdown
+                {{ (is_manual_event and manual_event == 'HEATING_SET_ECO')
+                  or (trigger is not none and trigger.id | default('',true) == 'homeassistant_shutdown') }}
+          then:
+            - variables:
+                override_temp: "{{ eco_temp }}" # manually override target temperature
+        - if: # transfer target temp to TRVs
+            - condition: template
+              value_template: > # if TRV_manual_override
+                {{ trigger is not none and trigger.id == 'TRV_temp_transfer'
+                  and trigger.entity_id is not none
+                  and state_attr(trigger.entity_id,"temperature") | float != scheduled_temp }}
+          then:
+            - variables:
+                override_temp: > # manually override target temperature
+                  {{ state_attr(trigger.entity_id,"temperature") | float }}
         - delay: # just do nothing, temp is set later
             seconds: 0
           enabled: false
@@ -731,12 +747,7 @@ action:
     then:
       - variables:
           target_temp: > # manually override target temperature
-            {% if (is_manual_event and manual_event == 'HEATING_SET_ECO')
-              or (trigger is not none and trigger.id | default('',true) == 'homeassistant_shutdown') %}
-              {{ eco_temp }}
-            {% else %}
-              {{ scheduled_temp }}
-            {% endif %}
+            {{ override_temp or scheduled_temp }}
           minimum_entities: > # list of min_temp entities blocking change
             {# number.badezimmer_hkr_min_heat_setpoint_limit #}
             {% set ns = namespace(entity_list=[]) %}
@@ -764,13 +775,13 @@ action:
             {% endfor %}
             {{ ns.entity_list }}
       # prevent [Error: Provided temperature 7.0 is not valid. Accepted range is 12.0 to 25.0]
-      - action: number.set_value # setting the min and max if necessary
+      - action: number.set_value # setting min boundary if necessary
         target:
           entity_id: "{{ minimum_entities }}"
         data:
           value: "{{ target_temp }}"
         enabled: !input enable_min_max_correct
-      - action: number.set_value # setting the min and max if necessary
+      - action: number.set_value # setting max boundary if necessary
         target:
           entity_id: "{{ maximum_entities }}"
         data:
