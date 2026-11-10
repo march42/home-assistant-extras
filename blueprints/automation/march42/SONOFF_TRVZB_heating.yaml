@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.01-b14
+    **Version** 2.02-b15
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -322,12 +322,22 @@ blueprint:
             If you use input_boolean helper.
             HEATING_WINTER_START will lead to turn_on
             HEATING_WINTER_STOPP will lead to turn_off
+
+            It's sufficient if one instance of the automation reacts on this.
+          default: false
+          selector:
+            boolean:
+        enable_system_events: # enable Home Assistant system events
+          name: Enable Home Assistant system events
+          description: >
+            Activate receiving and handling of Home Assistant system events.
+            On homeassistant_start event to set scheduled temperature gets triggered.
+            On homeassistant_shutdown it'll trigger event to set eco temperature.
           default: false
           selector:
             boolean:
 
 triggers:
-  # trigger on temperature change from external sensor
   - alias: "Temperature on remote sensor changed"
     id: "external_temperature_sensor"
     trigger: temperature.changed
@@ -336,7 +346,6 @@ triggers:
     options:
       threshold:
         type: any
-  # trigger on changed target temperature
   - alias: "Target temperature on TRV changed"
     id: 'TRV_temp_changed'
     platform: state # temperature setting changed
@@ -417,12 +426,12 @@ triggers:
     id: "homeassistant_start"
     platform: homeassistant
     event: start
-    enabled: false
+    enabled: !input enable_system_events
   - alias: "Home Assistant stopping"
     id: "homeassistant_shutdown"
     platform: homeassistant
     event: shutdown
-    enabled: false
+    enabled: !input enable_system_events
 
   # manual events for remote controlling from other automations
   - alias: "Manual event HEATING_***"
@@ -550,6 +559,7 @@ action:
         - value_template: '{{ is_winter }}'
           condition: template
         - value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew * 60 }}'
+          # sensor.last_reported | default(sensor.last_updated, true)
           condition: template
         - value_template: '{{ temperature_source is not none and trigger.entity_id is not none }}'
           condition: template
@@ -645,7 +655,25 @@ action:
             entity_id: "{{ thermostat_entities }}"
         - stop: "stop after turning off TRV when winter started"
 
-    - conditions: # target temperature changes
+    ### removed... now continues to temperature setting
+    #- conditions: # home assistant starting
+    #    - condition: trigger
+    #      id: 'homeassistant_start'
+    #  sequence:
+    #    - event: HEATING_RESET_TO_SCHEDULER
+    #      event_data:
+    #        reason: homeassistant_start
+    #    - stop: "homeassistant_start triggered HEATING_RESET_TO_SCHEDULER"
+    #- conditions: # home assistant shutting down
+    #    - condition: trigger
+    #      id: 'homeassistant_shutdown'
+    #  sequence:
+    #    - event: HEATING_SET_ECO
+    #      event_data:
+    #        reason: homeassistant_shutdown
+    #    - stop: "homeassistant_shutdown triggered HEATING_SET_ECO"
+
+    - conditions: # continue to set target temperature
         - value_template: '{{ is_winter }}'
           condition: template
           enabled: true
@@ -666,6 +694,10 @@ action:
             - id: 'nobody_home'
               condition: trigger
             - id: 'somebody_home'
+              condition: trigger
+            - id: 'homeassistant_start'
+              condition: trigger
+            - id: 'homeassistant_shutdown'
               condition: trigger
       sequence:
         - delay: # just do nothing, temp is set later
@@ -690,7 +722,8 @@ action:
     then:
       - variables:
           target_temp: > # manually override target temperature
-            {% if is_manual_event and manual_event == 'HEATING_SET_ECO' %}
+            {% if (is_manual_event and manual_event == 'HEATING_SET_ECO')
+              or (trigger is not none and trigger.id | default('',true) == 'homeassistant_shutdown') %}
               {{ eco_temp }}
             {% else %}
               {{ scheduled_temp }}

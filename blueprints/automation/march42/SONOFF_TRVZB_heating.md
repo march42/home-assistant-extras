@@ -202,15 +202,23 @@ More time should be considered, when using presence sensors.
 - Temperature changed on remote sensor
 - Target temperature changed on TRV
 
+- Home Assistant starting/stopping
+
+#### Home Assistant system events
+
+- On Home Assistant stopping the target temperature will be set to eco temp.
+- On Home Assistant start the target temperature will be reset to scheduled temperature.
+
 ### Changelog
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
-#### Version 2.01-b14
+#### Work In Progress
 
 ##### added
 
-- input sections structuring configuration settings
+- Home Assistant system events (v2.02-b15)
+- input sections structuring configuration settings (v2.01-b14)
 
 #### Version 2.00
 
