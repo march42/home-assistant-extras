@@ -17,6 +17,32 @@ trace:
   stored_traces: 20
 ```
 
+### filter list
+
+That actual example **doesn't work**
+error *UndefinedError: 'homeassistant.helpers.template.states.TemplateState object' has no attribute 'min_temp'*
+and *UndefinedError: 'homeassistant.helpers.template.states.TemplateState object' has no attribute 'max_temp'*
+
+Filtering a list of thermostat entities, to support desired target temperature.
+With `expand(thermostat_entities)` the list will be expanded groups and areas to full state objects.
+The `selectattr` functions filter the list based on checked attribute values.
+While `selectattr('temperature', 'ne', target_temp)` checks if current target temperature is not equal to target_temp
+`selectattr('min_temp', 'le', target_temp)` checks min_temp is lower or equal to target_temp
+and `selectattr('max_temp', 'ge', target_temp)` checks max_temp is greater or equal to target_temp.
+At last `map(attribute='entity_id') | list` maps the wanted attribute entity_id
+and converts the resulting bunge of objects to list of entity_id.
+
+```yaml
+- variables:
+    target_entities: > # select only thermostats supporting desired target temperature
+      {{ expand(thermostat_entities)
+          | selectattr('temperature', 'ne', target_temp)
+          | selectattr('min_temp', 'le', target_temp)
+          | selectattr('max_temp', 'ge', target_temp)
+          | map(attribute='entity_id') | list
+          }}
+```
+
 ## triggers
 
 `trigger` entity for automation after triggering event

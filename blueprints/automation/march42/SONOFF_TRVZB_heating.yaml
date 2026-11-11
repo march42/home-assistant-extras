@@ -2,7 +2,7 @@ blueprint:
   name: Sonoff TRVZB Heating v2
   description: |
     **Heating Control for Sonoff TRVZB**
-    **Version** 2.03-b16
+    **Version** 2.03-b18
     **Repository** [march42/home-assistant-extras](https://github.com/march42/home-assistant-extras/)
 
     - sets target temperature according to configured settings
@@ -13,12 +13,16 @@ blueprint:
     - manual winter mode activation via `input_boolean` helper or `binary_sensor`
     - comfort heating activation via `scheduler` or `binary_sensor`
     - remote window contact sensors for open window detection
-    - choose `person`, `device_tracker` or `input_boolean` for somebody at home detection
+    - somebody at home detection via choosen `person`, `device_tracker` or `input_boolean`
+    - transfer manually changed target temperature to the other TRVs
     - specific functionality for Sonoff TRVZB
       - sets external temperature from configured remote sensor
+      - set min_temp and max_temp if target_temp out of range
     - manual events
       - HEATING_RESET_TO_SCHEDULER activate scheduled temperature on the TRVs
       - HEATING_SET_ECO override TRVs target temperature to eco temp
+      - HEATING_WINTER_START turn on the winter mode helper
+      - HEATING_WINTER_STOPP turn off the winter mode helper
 
     temperature settings and correlations, i found to be useful
     - open window temp 7.0°C
@@ -371,7 +375,7 @@ triggers:
     id: 'TRV_temp_transfer'
     platform: state # temperature setting changed
     entity_id: !input input_trv
-    enabled: !input enable_transfer_temp
+    enabled: !input enable_transfer_temp # only if enabled at settings
     attribute: temperature
     #not_to: {{ scheduled_temp }} # unluckily this is not working
     not_to:
@@ -562,7 +566,7 @@ variables:
     {% else %}
       {{ eco_temp }}
     {% endif %}
-  #override_temp: "{{ none }}"
+  override_temp: ""
 
   # manual event
   is_manual_event: "{{ trigger is not none and trigger.id == 'manual_event' }}"
@@ -580,9 +584,6 @@ action:
         - id: 'external_temperature_sensor'
           condition: trigger
         - value_template: '{{ is_winter }}'
-          condition: template
-        - value_template: '{{ seconds_since_last_triggered >= temperature_source_deskew * 60 }}'
-          # sensor.last_reported | default(sensor.last_updated, true)
           condition: template
         - value_template: '{{ temperature_source is not none and trigger.entity_id is not none }}'
           condition: template
@@ -615,12 +616,20 @@ action:
               {{ ((temperature - 32) * 5 / 9 if unit == '°F'
                   else temperature - 273.15 if unit == 'K'
                   else temperature) | round(1) }}
-        - action: number.set_value # setting the entities works with multiple TRVs and maybe other devices as well
-          target:
-            entity_id: "{{ target_entities }}"
-          data:
-            value: "{{ temperature_value }}"
-        - stop: "_external_temperature_sensor_value set"
+        - if: # check temperature_source_deskew
+            - value_template: "{{ seconds_since_last_triggered >= temperature_source_deskew * 60 }}"
+              # time_since(states.sensor.wohnzimmer_klima_anzeige_temperature.last_changed)
+              # sensor.last_reported | default(sensor.last_updated, true)
+              condition: template
+          then:
+            - action: number.set_value # setting the entities works with multiple TRVs and maybe other devices as well
+              target:
+                entity_id: "{{ target_entities }}"
+              data:
+                value: "{{ temperature_value }}"
+            - stop: "_external_temperature_sensor_value set" # to {{ temperature_value }} template doesn't work
+          else:
+            - stop: "temperature_source_deskew" # ({{ seconds_since_last_triggered | round(0) }} seconds) template doesn't work
     - conditions: # revert temperature on TRV
         - id: 'TRV_temp_revert'
           condition: trigger
@@ -715,19 +724,21 @@ action:
           then:
             - variables:
                 override_temp: "{{ eco_temp }}" # manually override target temperature
-        - if: # transfer target temp to TRVs
-            - condition: template
-              value_template: > # if TRV_manual_override
-                {{ trigger is not none and trigger.id == 'TRV_temp_transfer'
-                  and trigger.entity_id is not none
-                  and state_attr(trigger.entity_id,"temperature") | float != scheduled_temp }}
-          then:
-            - variables:
-                override_temp: > # manually override target temperature
-                  {{ state_attr(trigger.entity_id,"temperature") | float }}
-        - delay: # just do nothing, temp is set later
-            seconds: 0
-          enabled: false
+          else:
+            - if: # transfer target temp to TRVs
+                - condition: template
+                  value_template: > # if TRV_manual_override
+                    {{ trigger is not none and trigger.id == 'TRV_temp_transfer'
+                      and trigger.entity_id is not none
+                      and state_attr(trigger.entity_id,"temperature") | float != scheduled_temp }}
+              then:
+                - variables:
+                    override_temp: > # manually override target temperature
+                      {{ state_attr(trigger.entity_id,"temperature") | float }}
+              else:
+                - delay: # just do nothing, temp is set later
+                    seconds: 0
+                  enabled: false
 
     default:  # just in case I missed something
       - service: system_log.write
@@ -741,13 +752,13 @@ action:
       - stop: "not changing temperature during unplanned events"
 
   # in the end, we set the scheduled target temperature
-  - if: # only in Winter Mode
+  - if: # change target temp, only in Winter Mode
       - condition: template
         value_template: "{{ is_winter }}"
     then:
       - variables:
           target_temp: > # manually override target temperature
-            {{ override_temp or scheduled_temp }}
+            {{ override_temp | default(scheduled_temp, true) | float }}
           minimum_entities: > # list of min_temp entities blocking change
             {# number.badezimmer_hkr_min_heat_setpoint_limit #}
             {% set ns = namespace(entity_list=[]) %}
@@ -787,6 +798,25 @@ action:
         data:
           value: "{{ target_temp }}"
         enabled: !input enable_min_max_correct
+      - variables:
+          #target_entities: > # select only thermostats supporting desired target temperature
+          #  {{ expand(thermostat_entities)
+          #      | selectattr('temperature', 'ne', target_temp)
+          #      | selectattr('min_temp', 'le', target_temp)
+          #      | selectattr('max_temp', 'ge', target_temp)
+          #      | map(attribute='entity_id') | list
+          #      }}
+          target_entities: > # select only thermostats supporting desired target temperature
+            {# using for loop, because selectattr and rejectattr didn't work #}
+            {% set ns = namespace(entity_list=[]) %}
+            {% for ent in thermostat_entities
+                if state_attr(ent,"temperature") != target_temp
+                  and target_temp >= state_attr(ent,"min_temp")
+                  and target_temp <= state_attr(ent,"max_temp")
+                %}
+              {% set ns.entity_list = ns.entity_list + [ent] %}
+            {% endfor %}
+            {{ ns.entity_list }}
       # now, the delay between actions
       - delay: # action_delay
           seconds: !input action_delay
@@ -794,7 +824,7 @@ action:
       # finally set the target temperature
       - action: climate.set_temperature
         target:
-          entity_id: "{{ thermostat_entities }}"
+          entity_id: "{{ target_entities }}"
         data:
           temperature: "{{ target_temp }}"
           hvac_mode: heat
